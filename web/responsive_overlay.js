@@ -15,7 +15,9 @@ import {
 import {
     configureMediaTargets,
     handleExecutionOutput,
-    renderOutputs
+    renderOutputs,
+    openLightboxMedia,
+    closeLightboxMedia
 } from "./utils/responsive_overlay_media.js";
 
 const EXTENSION_NAME = "ComfyUI.ResponsiveOverlay";
