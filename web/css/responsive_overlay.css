@@ -443,6 +443,16 @@
     font-size: 13px;
     resize: vertical;
 }
+.responsive-overlay__widget-input option {
+    background: #111827;
+    color: #e5e7eb;
+}
+
+.responsive-overlay__widget-input option:checked,
+.responsive-overlay__widget-input option:hover {
+    background: rgba(59, 130, 246, 0.35);
+}
+
 
 .responsive-overlay__widget-textarea {
     min-height: 96px;
