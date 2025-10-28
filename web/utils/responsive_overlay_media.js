@@ -71,21 +71,21 @@ export function renderOutputs() {
         const mediaElement = item.kind === 'video'
             ? createVideoElement(item.url)
             : createImageElement(item.url, item.filename, { loading: 'lazy' });
-        mediaElement.dataset.overlayMedia = '1';
-        mediaElement.dataset.overlayKind = item.kind;
-        mediaElement.dataset.overlayName = item.filename;
+
+        const figure = document.createElement("figure");
+        figure.className = "responsive-overlay__result";
         figure.dataset.mediaUrl = item.url;
         figure.dataset.mediaKind = item.kind;
         figure.dataset.mediaName = item.filename;
         figure.dataset.mediaSubfolder = item.subfolder || '';
         figure.dataset.mediaStorage = item.storageType || '';
+
         mediaElement.addEventListener('click', (event) => {
+            event.preventDefault();
             event.stopPropagation();
-            openLightbox(item);
+            openLightboxMedia(item);
         });
 
-        const figure = document.createElement("figure");
-        figure.className = "responsive-overlay__result";
         figure.appendChild(mediaElement);
 
         const caption = document.createElement("figcaption");
@@ -97,7 +97,7 @@ export function renderOutputs() {
 
         figure.addEventListener("click", (event) => {
             event.preventDefault();
-            openLightbox(item);
+            openLightboxMedia(item);
         });
 
         grid.appendChild(figure);
@@ -154,9 +154,23 @@ export function renderCurrentMedia(item) {
         return;
     }
 
-    const mediaElement = item.kind === "video"
-        ? createVideoElement(item.url, { controls: true, autoplay: true, loop: true, playsInline: true, preload: "metadata" })
-        : createImageElement(item.url, item.filename, { loading: "eager" });
+    let mediaElement;
+    if (item.kind === "video") {
+        mediaElement = document.createElement("video");
+        mediaElement.src = item.url;
+        mediaElement.controls = true;
+        mediaElement.autoplay = true;
+        mediaElement.loop = true;
+        mediaElement.playsInline = true;
+    } else {
+        mediaElement = createImageElement(item.url, item.filename, { loading: "eager" });
+    }
+
+    mediaElement.classList.add("responsive-overlay__current-preview");
+    mediaElement.addEventListener("click", (event) => {
+        event.preventDefault();
+        openLightboxMedia(item);
+    });
 
     container.appendChild(mediaElement);
 }
