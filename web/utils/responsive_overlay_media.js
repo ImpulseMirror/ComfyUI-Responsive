@@ -68,25 +68,22 @@ export function renderOutputs() {
     renderCurrentMedia(latestOutputs[0]);
 
     latestOutputs.forEach((item) => {
-        const mediaElement = item.kind === 'video'
-            ? createVideoElement(item.url)
-            : createImageElement(item.url, item.filename, { loading: 'lazy' });
+        const preview = createPreviewElement(item, { loading: "lazy" });
 
         const figure = document.createElement("figure");
         figure.className = "responsive-overlay__result";
         figure.dataset.mediaUrl = item.url;
+        figure.dataset.mediaPlaybackUrl = item.playbackUrl;
         figure.dataset.mediaKind = item.kind;
         figure.dataset.mediaName = item.filename;
-        figure.dataset.mediaSubfolder = item.subfolder || '';
-        figure.dataset.mediaStorage = item.storageType || '';
 
-        mediaElement.addEventListener('click', (event) => {
+        preview.addEventListener("click", (event) => {
             event.preventDefault();
             event.stopPropagation();
             openLightboxMedia(item);
         });
 
-        figure.appendChild(mediaElement);
+        figure.appendChild(preview);
 
         const caption = document.createElement("figcaption");
         caption.appendChild(createSpan("responsive-overlay__result-name", item.filename));
@@ -114,15 +111,17 @@ export function openLightboxMedia(item) {
 
     mediaContainer.innerHTML = "";
     meta.textContent = item.filename;
-    lightbox.classList.remove("hidden");
 
     if (item.kind === "video") {
         const video = document.createElement("video");
-        video.src = item.url;
         video.controls = true;
         video.autoplay = true;
         video.loop = true;
         video.playsInline = true;
+        const source = document.createElement("source");
+        source.src = item.playbackUrl;
+        source.type = "video/mp4";
+        video.appendChild(source);
         mediaContainer.appendChild(video);
     } else {
         const img = createImageElement(item.url, item.filename, { loading: "eager" });
@@ -155,25 +154,14 @@ export function renderCurrentMedia(item) {
         return;
     }
 
-    let mediaElement;
-    if (item.kind === "video") {
-        mediaElement = document.createElement("video");
-        mediaElement.src = item.url;
-        mediaElement.controls = true;
-        mediaElement.autoplay = true;
-        mediaElement.loop = true;
-        mediaElement.playsInline = true;
-    } else {
-        mediaElement = createImageElement(item.url, item.filename, { loading: "eager" });
-    }
-
-    mediaElement.classList.add("responsive-overlay__current-preview");
-    mediaElement.addEventListener("click", (event) => {
+    const preview = createPreviewElement(item, { loading: "eager" });
+    preview.classList.add("responsive-overlay__current-preview");
+    preview.addEventListener("click", (event) => {
         event.preventDefault();
         openLightboxMedia(item);
     });
 
-    container.appendChild(mediaElement);
+    container.appendChild(preview);
 }
 
 function extractMediaFromOutput(output) {
@@ -192,17 +180,18 @@ function extractMediaFromOutput(output) {
                 const filename = value.filename || value.file_name;
                 const subfolder = value.subfolder || value.sub_folder || value.folder || "";
                 const storageType = value.type || value.storage || "output";
-                const url = buildMediaUrl(filename, subfolder, storageType);
-                if (url) {
+                const previewUrl = buildMediaUrl(filename, subfolder, storageType);
+                if (previewUrl) {
                     const ext = filename.split(".").pop()?.toLowerCase() || "";
                     const videoExts = ["mp4", "webm", "mov", "avi", "mkv"];
                     const kind = videoExts.includes(ext) ? "video" : "image";
                     collected.push({
-                        url,
+                        url: previewUrl,
                         filename,
                         subfolder,
                         storageType,
-                        kind
+                        kind,
+                        playbackUrl: kind === "video" ? buildVideoPlaybackUrl(filename, subfolder, storageType) : previewUrl
                     });
                 }
                 return;
@@ -229,11 +218,29 @@ function buildMediaUrl(filename, subfolder, storageType) {
     return `/api/view?${params.toString()}`;
 }
 
-function createVideoElement(src) {
-    return createImageElement(src, "Video preview", { loading: "lazy" });
+function buildVideoPlaybackUrl(filename, subfolder, storageType) {
+    if (!filename) {
+        return "";
+    }
+    const params = new URLSearchParams();
+    params.set("filename", filename);
+    params.set("type", storageType || "output");
+    if (subfolder) {
+        params.set("subfolder", subfolder);
+    }
+    params.set("format", "video/h264-mp4");
+    params.set("frame_rate", "30");
+    return `/api/viewvideo?${params.toString()}`;
 }
 
-function createImageElement(src, alt, attributes) {
+function createPreviewElement(item, attributes) {
+    if (item.kind === "video") {
+        return createImageElement(item.url, `${item.filename} preview`, attributes);
+    }
+    return createImageElement(item.url, item.filename, attributes);
+}
+
+function createImageElement(src, alt, attributes = {}) {
     const img = document.createElement("img");
     img.src = src;
     img.alt = alt;
