@@ -543,8 +543,8 @@ body.responsive-overlay-is-open {
 
 .responsive-overlay__lightbox-content {
     position: relative;
-    max-width: 90vw;
-    max-height: calc(100vh - clamp(80px, 8vw, 120px));
+    width: min(90vw, calc(100vh - clamp(96px, 12vh, 160px)));
+    max-height: calc(100vh - clamp(96px, 12vh, 160px));
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -552,9 +552,9 @@ body.responsive-overlay-is-open {
 }
 
 .responsive-overlay__lightbox-media {
-    max-width: 90vw;
-    max-height: calc(100vh - clamp(160px, 12vw, 220px));
     width: 100%;
+    flex: 1 1 auto;
+    max-height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -567,8 +567,8 @@ body.responsive-overlay-is-open {
 .responsive-overlay__lightbox-media img,
 .responsive-overlay__lightbox-media video {
     display: block;
-    width: auto;
-    height: auto;
+    width: 100%;
+    height: 100%;
     max-width: 100%;
     max-height: 100%;
     border-radius: 18px;
