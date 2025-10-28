@@ -19,7 +19,7 @@ export function collectNodeMediaPreviews(node) {
             if (!item || !item.url) {
                 return;
             }
-            const key = `${item.url}|${item.playbackUrl || ""}`;
+            const key = buildKey(item);
             if (dedupe.has(key)) {
                 return;
             }
@@ -252,7 +252,9 @@ function descriptorFromParams(params = {}, options = {}) {
         url,
         playbackUrl,
         filename,
-        label: options.label || params.label || filename
+        label: options.label || params.label || filename,
+        storageType,
+        subfolder
     };
 }
 
@@ -393,4 +395,19 @@ function isMediaElement(value) {
         return true;
     }
     return false;
+}
+
+function buildKey(item) {
+    if (!item) {
+        return "";
+    }
+    if (item.filename) {
+        return [
+            item.filename,
+            item.subfolder || "",
+            item.storageType || "",
+            item.kind || "image"
+        ].join("|");
+    }
+    return `${item.url || ""}|${item.playbackUrl || ""}`;
 }

@@ -496,6 +496,49 @@
     min-height: 96px;
 }
 
+.responsive-overlay__widget-input--readonly {
+    cursor: default;
+    background: rgba(255, 255, 255, 0.04);
+    border-style: dashed;
+}
+
+.responsive-overlay__file-input {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.responsive-overlay__file-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.responsive-overlay__file-button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    background: rgba(59, 130, 246, 0.35);
+    color: #e0f2fe;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.responsive-overlay__file-button:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.55);
+    transform: translateY(-1px);
+}
+
+.responsive-overlay__file-button:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.responsive-overlay__file-hidden {
+    display: none;
+}
+
 .responsive-overlay__empty {
     text-align: center;
     opacity: 0.6;

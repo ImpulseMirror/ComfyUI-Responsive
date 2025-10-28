@@ -834,6 +834,63 @@ function renderNodeDetails(node) {
                         updateWidgetValue(node, widget, event.target.checked);
                     });
                     break;
+                case "image": {
+                    const fileWrapper = $el("div", { className: "responsive-overlay__file-input" }, []);
+                    const textValue = typeof descriptor.value === "string" ? descriptor.value : "";
+                    const readonlyInput = $el("input", {
+                        className: "responsive-overlay__widget-input responsive-overlay__widget-input--readonly",
+                        type: "text",
+                        value: textValue,
+                        readOnly: true,
+                        placeholder: "No file selected"
+                    });
+
+                    const actions = $el("div", { className: "responsive-overlay__file-actions" }, []);
+                    const uploadButton = $el("button", { type: "button", className: "responsive-overlay__file-button" }, ["Choose File"]);
+                    const hiddenInput = $el("input", {
+                        type: "file",
+                        accept: descriptor.attributes?.accept || "image/*",
+                        className: "responsive-overlay__file-hidden"
+                    });
+
+                    uploadButton.addEventListener("click", () => {
+                        hiddenInput.click();
+                    });
+
+                    hiddenInput.addEventListener("change", async (event) => {
+                        const file = event.target?.files?.[0];
+                        if (!file) {
+                            return;
+                        }
+
+                        const originalText = uploadButton.textContent;
+                        uploadButton.disabled = true;
+                        uploadButton.textContent = "Uploading…";
+
+                        try {
+                            const uploadResult = await uploadImageForWidget(node, widget, file, descriptor);
+                            if (uploadResult && uploadResult.value !== undefined) {
+                                readonlyInput.value = uploadResult.displayValue ?? uploadResult.value ?? "";
+                                updateWidgetValue(node, widget, uploadResult.value);
+                                scheduleOverlayRefresh(true);
+                            }
+                        } catch (error) {
+                            console.error(`[${EXTENSION_NAME}] Failed to upload image`, error);
+                        } finally {
+                            hiddenInput.value = "";
+                            uploadButton.disabled = false;
+                            uploadButton.textContent = originalText;
+                        }
+                    });
+
+                    actions.appendChild(uploadButton);
+                    fileWrapper.appendChild(readonlyInput);
+                    fileWrapper.appendChild(actions);
+                    fileWrapper.appendChild(hiddenInput);
+                    row.appendChild(fileWrapper);
+                    input = null;
+                    break;
+                }
                 default:
                     input = $el("textarea", {
                         className: "responsive-overlay__widget-input responsive-overlay__widget-textarea",
@@ -844,7 +901,9 @@ function renderNodeDetails(node) {
                     });
             }
 
-            row.appendChild(input);
+            if (input) {
+                row.appendChild(input);
+            }
             widgetContainer.appendChild(row);
         });
     }
@@ -969,7 +1028,45 @@ function closeLightbox() {
     closeLightboxMedia();
 }
 
+async function uploadImageForWidget(node, widget, file, descriptor) {
+    if (!file) {
+        return null;
+    }
 
+    const form = new FormData();
+    form.append("image", file, file.name);
+
+    const uploadType = descriptor?.attributes?.uploadType || "input";
+    if (uploadType) {
+        form.append("type", uploadType);
+    }
+
+    const subfolder = descriptor?.attributes?.subfolder;
+    if (subfolder) {
+        form.append("subfolder", subfolder);
+    }
+
+    form.append("overwrite", "true");
+
+    try {
+        const response = await api.fetchApi("/upload/image", {
+            method: "POST",
+            body: form
+        });
+        if (response && typeof response === "object") {
+            const value = response.filename || response.name || response.path || response.file || file.name;
+            return {
+                value,
+                displayValue: value
+            };
+        }
+    } catch (error) {
+        console.error(`[${EXTENSION_NAME}] Upload request failed`, error);
+        throw error;
+    }
+
+    return null;
+}
 
 function updateWidgetValue(node, widget, value) {
     if (widget === undefined) {

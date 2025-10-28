@@ -22,7 +22,7 @@ export function handleExecutionOutput(detail) {
     }
 
     mediaItems.forEach((item) => {
-        const key = item.url;
+        const key = buildMediaKey(item);
         const existingIndex = latestOutputs.findIndex((entry) => entry.key === key);
         if (existingIndex !== -1) {
             latestOutputs.splice(existingIndex, 1);
@@ -68,7 +68,7 @@ export function renderOutputs() {
     renderCurrentMedia(latestOutputs[0]);
 
     latestOutputs.forEach((item) => {
-        const preview = createPreviewElement(item, item.kind === 'video' ? {} : { loading: 'lazy' });
+        const preview = createPreviewElement(item, item.kind === "video" ? {} : { loading: "lazy" });
 
         const figure = document.createElement("figure");
         figure.className = "responsive-overlay__result";
@@ -154,7 +154,7 @@ export function renderCurrentMedia(item) {
         return;
     }
 
-    const preview = createPreviewElement(item, item.kind === 'video' ? {} : { loading: 'eager' });
+    const preview = createPreviewElement(item, item.kind === "video" ? {} : { loading: "eager" });
     preview.classList.add("responsive-overlay__current-preview");
     preview.addEventListener("click", (event) => {
         event.preventDefault();
@@ -277,4 +277,19 @@ function createParagraph(className, text) {
     p.className = className;
     p.textContent = text;
     return p;
+}
+
+function buildMediaKey(item) {
+    if (!item) {
+        return "";
+    }
+    if (item.filename) {
+        return [
+            item.filename,
+            item.subfolder || "",
+            item.storageType || "",
+            item.kind || "image"
+        ].join("|");
+    }
+    return `${item.url || ""}|${item.playbackUrl || ""}`;
 }

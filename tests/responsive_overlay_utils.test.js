@@ -94,6 +94,21 @@ describe("getWidgetDescriptor", () => {
         assert.equal(descriptor.value, true);
     });
 
+    test("handles image widgets", () => {
+        const widget = {
+            name: "Image",
+            type: "image",
+            value: "example.png",
+            accept: "image/png"
+        };
+
+        const descriptor = getWidgetDescriptor(widget, 3);
+        assert.equal(descriptor.control, "image");
+        assert.equal(descriptor.value, "example.png");
+        assert.equal(descriptor.attributes.accept, "image/png");
+        assert.equal(descriptor.attributes.uploadType, "input");
+    });
+
     test("defaults to textarea for unknown widget", () => {
         const descriptor = getWidgetDescriptor(undefined, 3);
         assert.equal(descriptor.control, "textarea");

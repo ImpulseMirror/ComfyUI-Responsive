@@ -108,6 +108,13 @@ export function getWidgetDescriptor(widget, index = 0) {
             descriptor.control = "checkbox";
             descriptor.value = !!widget.value;
             break;
+        case "image":
+            descriptor.control = "image";
+            descriptor.value = widget.value ?? "";
+            descriptor.attributes.accept = widget?.accept || "image/*";
+            descriptor.attributes.uploadType = widget?.upload_type || widget?.directory || widget?.path || "input";
+            descriptor.attributes.subfolder = widget?.subfolder || "";
+            break;
         default:
             descriptor.control = "textarea";
             descriptor.value = widget.value ?? "";
