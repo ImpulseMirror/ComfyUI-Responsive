@@ -329,6 +329,21 @@ function toggleOverlay() {
     setOverlayState(!isOpen);
 }
 
+let scheduledRefresh = false;
+function scheduleOverlayRefresh() {
+    if (scheduledRefresh) {
+        return;
+    }
+    scheduledRefresh = true;
+    requestAnimationFrame(() => {
+        scheduledRefresh = false;
+        const root = document.getElementById(OVERLAY_ID);
+        if (root && !root.classList.contains("hidden")) {
+            renderWorkflow();
+        }
+    });
+}
+
 function handleKeyboardShortcuts(event) {
     if (event.key === "Escape") {
         setOverlayState(false);
@@ -354,19 +369,13 @@ app.registerExtension({
 
         window.addEventListener("keydown", handleKeyboardShortcuts);
 
-        const observer = new MutationObserver(() => {
-            if (!root.classList.contains("hidden")) {
-                renderWorkflow();
-            }
-        });
+        const observer = new MutationObserver(scheduleOverlayRefresh);
 
         observer.observe(document.body, { childList: true, subtree: true });
 
         if (api?.addEventListener) {
             api.addEventListener("workflowLoaded", () => {
-                if (!root.classList.contains("hidden")) {
-                    renderWorkflow();
-                }
+                scheduleOverlayRefresh();
             });
         }
 
