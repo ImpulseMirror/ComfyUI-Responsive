@@ -332,6 +332,8 @@
 .responsive-overlay__preview-video {
     max-width: 100%;
     max-height: 100%;
+    width: auto;
+    height: auto;
     border-radius: 18px;
     background: #050505;
 }
@@ -374,6 +376,23 @@
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 16px;
 }
+.responsive-overlay__result figure {
+    margin: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.responsive-overlay__result img,
+.responsive-overlay__result video {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 16px;
+}
+
 
 .responsive-overlay__result {
     margin: 0;
