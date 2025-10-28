@@ -329,17 +329,6 @@
     min-height: 45vh;
 }
 
-.responsive-overlay__preview-video {
-    max-width: 100%;
-    max-height: 100%;
-    border-radius: 18px;
-    background: #050505;
-}
-
-.responsive-overlay__preview-video::-webkit-media-controls {
-    display: none !important;
-}
-
 .responsive-overlay__current-preview {
     max-width: 100%;
     max-height: 100%;

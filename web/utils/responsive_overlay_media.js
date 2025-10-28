@@ -235,26 +235,7 @@ function buildVideoPlaybackUrl(filename, subfolder, storageType) {
 
 function createPreviewElement(item, attributes = {}) {
     if (item.kind === "video") {
-        const video = document.createElement("video");
-        video.className = "responsive-overlay__preview-video";
-        video.muted = true;
-        video.loop = true;
-        video.autoplay = true;
-        video.playsInline = true;
-        video.controls = false;
-        video.setAttribute("preload", "metadata");
-        const source = document.createElement("source");
-        source.src = item.playbackUrl || item.url;
-        source.type = "video/mp4";
-        video.appendChild(source);
-        if (attributes && typeof attributes === "object") {
-            Object.entries(attributes).forEach(([key, value]) => {
-                if (value !== undefined && value !== null) {
-                    video.setAttribute(key, value);
-                }
-            });
-        }
-        return video;
+        return createImageElement(item.url, `${item.filename} preview`, attributes);
     }
     return createImageElement(item.url, item.filename, attributes);
 }
