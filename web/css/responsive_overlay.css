@@ -59,11 +59,6 @@
     opacity: 0.75;
 }
 
-.responsive-overlay__header-actions {
-    display: flex;
-    gap: 12px;
-}
-
 .responsive-overlay__header button {
     border: none;
     border-radius: 10px;
@@ -76,6 +71,17 @@
 
 .responsive-overlay__header button:hover {
     transform: translateY(-1px);
+}
+
+.responsive-overlay__header-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.responsive-overlay__header-actions .responsive-overlay__generate {
+    background: linear-gradient(135deg, #4ade80, #22c55e);
+    color: #0f172a;
+    font-weight: 600;
 }
 
 .responsive-overlay__refresh {
@@ -128,6 +134,12 @@
 .responsive-overlay__node:hover {
     background: rgba(255, 255, 255, 0.08);
     transform: translateY(-1px);
+}
+
+.responsive-overlay__node--selected {
+    background: rgba(79, 70, 229, 0.35);
+    border: 1px solid rgba(129, 140, 248, 0.65);
+    box-shadow: 0 8px 20px rgba(88, 28, 135, 0.18);
 }
 
 .responsive-overlay__node-head {

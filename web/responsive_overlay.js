@@ -6,8 +6,13 @@ import { summarizeWorkflow, mapNodeToDisplay, getWidgetDescriptor } from "./util
 const EXTENSION_NAME = "ComfyUI.ResponsiveOverlay";
 const TOGGLE_ID = "responsive-overlay-toggle";
 const OVERLAY_ID = "responsive-overlay-root";
+const LIST_ID = "responsive-overlay-nodes";
+const DETAILS_ID = "responsive-overlay-details";
 
 const ACTIVE_CLASS = "responsive-overlay-is-open";
+const SELECTED_CLASS = "responsive-overlay__node--selected";
+
+let selectedNodeId = null;
 
 function ensureStyleTag() {
     if (document.getElementById("responsive-overlay-styles")) {
@@ -109,6 +114,10 @@ function createOverlayRoot() {
                 ]),
                 $el("div", { className: "responsive-overlay__header-actions" }, [
                     $el("button", {
+                        className: "responsive-overlay__generate",
+                        onclick: () => triggerGenerate()
+                    }, ["Generate"]),
+                    $el("button", {
                         className: "responsive-overlay__refresh",
                         onclick: () => renderWorkflow()
                     }, ["Refresh"]),
@@ -119,9 +128,9 @@ function createOverlayRoot() {
                 ])
             ]),
             $el("div", { className: "responsive-overlay__body" }, [
-                $el("aside", { className: "responsive-overlay__sidebar", id: "responsive-overlay-nodes" }, []),
+                $el("aside", { className: "responsive-overlay__sidebar", id: LIST_ID }, []),
                 $el("main", { className: "responsive-overlay__content" }, [
-                    $el("section", { id: "responsive-overlay-details", className: "responsive-overlay__panel" }, [
+                    $el("section", { id: DETAILS_ID, className: "responsive-overlay__panel" }, [
                         $el("h3", {}, ["Node Details"]),
                         $el("p", { id: "responsive-overlay-placeholder" }, ["Select a node from the list to view and edit its widgets."])
                     ])
@@ -145,7 +154,7 @@ function getGraphNodes() {
 function renderWorkflow() {
     const nodes = getGraphNodes();
     const summaryEl = document.getElementById("responsive-overlay-summary");
-    const listEl = document.getElementById("responsive-overlay-nodes");
+    const listEl = document.getElementById(LIST_ID);
 
     if (!summaryEl || !listEl) {
         return;
@@ -159,17 +168,29 @@ function renderWorkflow() {
                 <p>Nothing to display yet. Build a workflow to see it here.</p>
             </div>
         `;
+        selectedNodeId = null;
+        renderNodeDetails(null);
         return;
     }
 
     listEl.innerHTML = "";
 
+    const nodeIds = nodes.map((node) => node.id);
+    if (selectedNodeId === null || !nodeIds.includes(selectedNodeId)) {
+        selectedNodeId = nodes[0]?.id ?? null;
+    }
+
     nodes.forEach((node) => {
         const display = mapNodeToDisplay(node);
+        const nodeId = node.id;
 
         const item = $el("button", {
             className: "responsive-overlay__node",
-            onclick: () => renderNodeDetails(node)
+            dataset: { nodeId: String(nodeId) },
+            onclick: () => {
+                setSelectedNode(nodeId);
+                renderNodeDetails(node);
+            }
         }, [
             $el("div", { className: "responsive-overlay__node-head" }, [
                 $el("span", { className: "responsive-overlay__node-title" }, [display.title]),
@@ -185,19 +206,34 @@ function renderWorkflow() {
             ])
         ]);
 
+        if (nodeId === selectedNodeId) {
+            item.classList.add(SELECTED_CLASS);
+        }
+
         listEl.appendChild(item);
     });
 
-    renderNodeDetails(nodes[0]);
+    const selected = nodes.find((node) => node.id === selectedNodeId) ?? null;
+    if (selected) {
+        renderNodeDetails(selected);
+        setSelectedNode(selectedNodeId);
+    } else {
+        renderNodeDetails(null);
+    }
 }
 
 function renderNodeDetails(node) {
-    const panel = document.getElementById("responsive-overlay-details");
+    const panel = document.getElementById(DETAILS_ID);
     if (!panel) {
         return;
     }
 
     panel.innerHTML = "";
+
+    if (!node) {
+        panel.appendChild($el("p", { className: "responsive-overlay__empty" }, ["Nothing selected. Pick a node to view its widgets."]));
+        return;
+    }
 
     const display = mapNodeToDisplay(node);
 
@@ -293,6 +329,18 @@ function renderNodeDetails(node) {
     panel.appendChild(widgetContainer);
 }
 
+function setSelectedNode(nodeId) {
+    selectedNodeId = nodeId;
+    const listEl = document.getElementById(LIST_ID);
+    if (!listEl) {
+        return;
+    }
+    listEl.querySelectorAll(".responsive-overlay__node").forEach((button) => {
+        const id = Number(button.dataset.nodeId);
+        button.classList.toggle(SELECTED_CLASS, id === selectedNodeId);
+    });
+}
+
 function updateWidgetValue(node, widget, value) {
     if (widget === undefined) {
         return;
@@ -340,6 +388,24 @@ function toggleOverlay() {
     setOverlayState(!isOpen);
 }
 
+function triggerGenerate() {
+    if (!app?.queuePrompt) {
+        console.warn(`[${EXTENSION_NAME}] queuePrompt unavailable; unable to trigger generation.`);
+        return;
+    }
+
+    try {
+        const result = app.queuePrompt(0, 1);
+        if (result instanceof Promise) {
+            result.catch((error) => {
+                console.error(`[${EXTENSION_NAME}] Failed to queue prompt`, error);
+            });
+        }
+    } catch (error) {
+        console.error(`[${EXTENSION_NAME}] Failed to queue prompt`, error);
+    }
+}
+
 let scheduledRefresh = false;
 function scheduleOverlayRefresh() {
     if (scheduledRefresh) {
@@ -351,6 +417,7 @@ function scheduleOverlayRefresh() {
         const root = document.getElementById(OVERLAY_ID);
         if (root && !root.classList.contains("hidden")) {
             renderWorkflow();
+            setSelectedNode(selectedNodeId);
         }
     });
 }
@@ -380,7 +447,19 @@ app.registerExtension({
 
         window.addEventListener("keydown", handleKeyboardShortcuts);
 
-        const observer = new MutationObserver(scheduleOverlayRefresh);
+        const observer = new MutationObserver((mutations) => {
+            if (root.classList.contains("hidden")) {
+                return;
+            }
+
+            for (const mutation of mutations) {
+                const target = mutation.target;
+                if (!root.contains(target) && target !== root) {
+                    scheduleOverlayRefresh();
+                    break;
+                }
+            }
+        });
 
         observer.observe(document.body, { childList: true, subtree: true });
 
