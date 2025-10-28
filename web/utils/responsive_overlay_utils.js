@@ -7,6 +7,41 @@ export function summarizeWorkflow(nodes) {
     return `${count} node${count === 1 ? "" : "s"}`;
 }
 
+function normalizeComboOptions(options) {
+    if (!options) {
+        return [];
+    }
+
+    if (Array.isArray(options)) {
+        return options.map((option) => normaliseOptionRecord(option));
+    }
+
+    if (Array.isArray(options.values)) {
+        return options.values.map((option) => normaliseOptionRecord(option));
+    }
+
+    if (typeof options.values === "object") {
+        return Object.entries(options.values).map(([key, value]) => normaliseOptionRecord({ id: key, label: value }));
+    }
+
+    return [];
+}
+
+function normaliseOptionRecord(option) {
+    if (option && typeof option === "object") {
+        const value = option.value ?? option.id ?? option.name ?? option.label;
+        const label = option.label ?? option.name ?? String(value ?? "");
+        return {
+            value,
+            label
+        };
+    }
+    return {
+        value: option,
+        label: String(option ?? "")
+    };
+}
+
 export function mapNodeToDisplay(node) {
     if (!node || typeof node !== "object") {
         return {
@@ -50,7 +85,10 @@ export function getWidgetDescriptor(widget, index = 0) {
     switch (widget.type) {
         case "combo":
             descriptor.control = "select";
-            descriptor.options = Array.isArray(widget.options) ? widget.options : [];
+            descriptor.options = normalizeComboOptions(widget.options);
+            if ((descriptor.value === undefined || descriptor.value === null || descriptor.value === "") && descriptor.options.length) {
+                descriptor.value = descriptor.options[0]?.value ?? descriptor.options[0]?.id ?? descriptor.options[0];
+            }
             break;
         case "number":
         case "slider":

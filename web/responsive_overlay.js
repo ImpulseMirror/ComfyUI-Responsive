@@ -789,9 +789,9 @@ function renderNodeDetails(node) {
                         className: "responsive-overlay__widget-input",
                         value: descriptor.value ?? ""
                     }, (descriptor.options || []).map((option) => $el("option", {
-                        value: option,
-                        selected: option === descriptor.value
-                    }, [option])));
+                        value: option?.value ?? option,
+                        selected: (option?.value ?? option) === descriptor.value
+                    }, [option?.label ?? String(option?.value ?? option ?? "")])));
                     input.addEventListener("change", (event) => {
                         updateWidgetValue(node, widget, event.target.value);
                     });

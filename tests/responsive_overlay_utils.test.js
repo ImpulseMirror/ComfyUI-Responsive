@@ -57,7 +57,11 @@ describe("getWidgetDescriptor", () => {
         const descriptor = getWidgetDescriptor(widget, 0);
         assert.equal(descriptor.control, "select");
         assert.equal(descriptor.label, "Mode");
-        assert.deepEqual(descriptor.options, widget.options);
+        assert.deepEqual(descriptor.options, [
+            { value: "fast", label: "fast" },
+            { value: "balanced", label: "balanced" },
+            { value: "quality", label: "quality" }
+        ]);
         assert.equal(descriptor.value, "fast");
     });
 
