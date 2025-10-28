@@ -351,9 +351,23 @@ function createOverlayRoot() {
                     $el("span", { className: "responsive-overlay__progress-label", id: PROGRESS_TEXT_ID }, [])
                 ])
             ]),
-                $el("div", { id: "responsive-overlay-lightbox", className: "responsive-overlay__lightbox hidden" }, [
+                $el("div", {
+                id: "responsive-overlay-lightbox",
+                className: "responsive-overlay__lightbox hidden",
+                onclick: (event) => {
+                    if (event.target === event.currentTarget) {
+                        closeLightbox();
+                    }
+                }
+            }, [
                 $el("div", { className: "responsive-overlay__lightbox-content" }, [
-                    $el("button", { className: "responsive-overlay__lightbox-close", onclick: closeLightbox }, ["✕"]),
+                    $el("button", {
+                        className: "responsive-overlay__lightbox-close",
+                        onclick: (event) => {
+                            event.preventDefault();
+                            closeLightbox();
+                        }
+                    }, ["✕"]),
                     $el("div", { id: "responsive-overlay-lightbox-media", className: "responsive-overlay__lightbox-media" }, []),
                     $el("div", { id: "responsive-overlay-lightbox-meta", className: "responsive-overlay__lightbox-meta" }, [])
                 ])

@@ -114,6 +114,7 @@ export function openLightboxMedia(item) {
 
     mediaContainer.innerHTML = "";
     meta.textContent = item.filename;
+    lightbox.classList.remove("hidden");
 
     if (item.kind === "video") {
         const video = document.createElement("video");
