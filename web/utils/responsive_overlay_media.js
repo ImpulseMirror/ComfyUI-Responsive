@@ -68,7 +68,7 @@ export function renderOutputs() {
     renderCurrentMedia(latestOutputs[0]);
 
     latestOutputs.forEach((item) => {
-        const preview = createPreviewElement(item, { loading: "lazy" });
+        const preview = createPreviewElement(item, item.kind === 'video' ? {} : { loading: 'lazy' });
 
         const figure = document.createElement("figure");
         figure.className = "responsive-overlay__result";
@@ -154,7 +154,7 @@ export function renderCurrentMedia(item) {
         return;
     }
 
-    const preview = createPreviewElement(item, { loading: "eager" });
+    const preview = createPreviewElement(item, item.kind === 'video' ? {} : { loading: 'eager' });
     preview.classList.add("responsive-overlay__current-preview");
     preview.addEventListener("click", (event) => {
         event.preventDefault();
@@ -233,9 +233,28 @@ function buildVideoPlaybackUrl(filename, subfolder, storageType) {
     return `/api/viewvideo?${params.toString()}`;
 }
 
-function createPreviewElement(item, attributes) {
+function createPreviewElement(item, attributes = {}) {
     if (item.kind === "video") {
-        return createImageElement(item.url, `${item.filename} preview`, attributes);
+        const video = document.createElement("video");
+        video.className = "responsive-overlay__preview-video";
+        video.muted = true;
+        video.loop = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.controls = false;
+        video.setAttribute("preload", "metadata");
+        const source = document.createElement("source");
+        source.src = item.playbackUrl || item.url;
+        source.type = "video/mp4";
+        video.appendChild(source);
+        if (attributes && typeof attributes === "object") {
+            Object.entries(attributes).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    video.setAttribute(key, value);
+                }
+            });
+        }
+        return video;
     }
     return createImageElement(item.url, item.filename, attributes);
 }
