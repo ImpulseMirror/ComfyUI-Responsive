@@ -2,6 +2,21 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { $el } from "../../scripts/ui.js";
 import { summarizeWorkflow, mapNodeToDisplay, getWidgetDescriptor } from "./utils/responsive_overlay_utils.js";
+import {
+    computeWorkflowKey,
+    ensureGroupOrder,
+    ensureNodeOrder,
+    setGroupOrder,
+    setNodeOrder,
+    isGroupCollapsed,
+    setGroupCollapsed,
+    getWorkflowState
+} from "./utils/responsive_overlay_storage.js";
+import {
+    configureMediaTargets,
+    handleExecutionOutput,
+    renderOutputs
+} from "./utils/responsive_overlay_media.js";
 
 const EXTENSION_NAME = "ComfyUI.ResponsiveOverlay";
 const TOGGLE_ID = "responsive-overlay-toggle";
@@ -15,7 +30,6 @@ const CURRENT_MEDIA_ID = "responsive-overlay-current-media";
 
 const ACTIVE_CLASS = "responsive-overlay-is-open";
 const SELECTED_CLASS = "responsive-overlay__node--selected";
-const ORDER_STORAGE_KEY = "comfyui-responsive.nodeOrder";
 
 let selectedNodeId = null;
 let lastWorkflowSignature = "";
@@ -24,145 +38,6 @@ let scheduledRefresh = false;
 let pendingRefreshForce = false;
 let draggedNodeId = null;
 let draggedSectionId = null;
-const MAX_OUTPUT_ITEMS = 16;
-const latestOutputs = [];
-const workflowOrderCache = loadOrderMap();
-
-function createEmptyState() {
-    return {
-        groupOrder: [],
-        nodeOrders: {},
-        collapsed: {}
-    };
-}
-
-function normalizeState(state) {
-    if (!state || typeof state !== "object" || Array.isArray(state)) {
-        return createEmptyState();
-    }
-    if (!Array.isArray(state.groupOrder)) {
-        state.groupOrder = [];
-    }
-    if (!state.nodeOrders || typeof state.nodeOrders !== "object") {
-        state.nodeOrders = {};
-    }
-    if (!state.collapsed || typeof state.collapsed !== "object") {
-        state.collapsed = {};
-    }
-    return state;
-}
-
-function loadOrderMap() {
-    try {
-        const raw = localStorage.getItem(ORDER_STORAGE_KEY);
-        if (!raw) {
-            return {};
-        }
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== "object") {
-            return {};
-        }
-        Object.keys(parsed).forEach((key) => {
-            if (Array.isArray(parsed[key])) {
-                parsed[key] = normalizeState({
-                    groupOrder: parsed[key],
-                    nodeOrders: { ungrouped: parsed[key] },
-                    collapsed: {}
-                });
-            } else {
-                parsed[key] = normalizeState(parsed[key]);
-            }
-        });
-        return parsed;
-    } catch (error) {
-        console.warn(`[${EXTENSION_NAME}] Unable to parse stored order`, error);
-    }
-    return {};
-}
-
-function persistWorkflowStates() {
-    try {
-        localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(workflowOrderCache));
-    } catch (error) {
-        console.warn(`[${EXTENSION_NAME}] Unable to persist order`, error);
-    }
-}
-
-function computeWorkflowKey(nodes) {
-    if (!Array.isArray(nodes) || !nodes.length) {
-        return "";
-    }
-    return nodes
-        .map((node) => `${node?.id ?? "?"}:${node?.type ?? "?"}`)
-        .sort()
-        .join("|");
-}
-
-function getWorkflowState(key) {
-    if (!key) {
-        return createEmptyState();
-    }
-    if (!workflowOrderCache[key]) {
-        workflowOrderCache[key] = createEmptyState();
-        persistWorkflowStates();
-    }
-    return workflowOrderCache[key];
-}
-
-function ensureGroupOrder(key, availableSections) {
-    const state = getWorkflowState(key);
-    const current = state.groupOrder || [];
-    const filtered = current.filter((section) => availableSections.includes(section));
-    availableSections.forEach((section) => {
-        if (!filtered.includes(section)) {
-            filtered.push(section);
-        }
-    });
-    if (filtered.length !== current.length || filtered.some((id, index) => id !== current[index])) {
-        state.groupOrder = filtered;
-        persistWorkflowStates();
-    }
-    return filtered;
-}
-
-function ensureNodeOrder(key, sectionId, nodeIds) {
-    const state = getWorkflowState(key);
-    const stored = Array.isArray(state.nodeOrders[sectionId]) ? state.nodeOrders[sectionId] : [];
-    const filtered = stored.filter((id) => nodeIds.includes(id));
-    nodeIds.forEach((id) => {
-        if (!filtered.includes(id)) {
-            filtered.push(id);
-        }
-    });
-    if (filtered.length !== stored.length || filtered.some((id, index) => id !== stored[index])) {
-        state.nodeOrders[sectionId] = filtered;
-        persistWorkflowStates();
-    }
-    return filtered;
-}
-
-function setGroupOrder(key, order) {
-    const state = getWorkflowState(key);
-    state.groupOrder = [...order];
-    persistWorkflowStates();
-}
-
-function setNodeOrder(key, sectionId, order) {
-    const state = getWorkflowState(key);
-    state.nodeOrders[sectionId] = [...order];
-    persistWorkflowStates();
-}
-
-function isGroupCollapsed(key, sectionId) {
-    const state = getWorkflowState(key);
-    return !!state.collapsed?.[sectionId];
-}
-
-function setGroupCollapsed(key, sectionId, collapsed) {
-    const state = getWorkflowState(key);
-    state.collapsed[sectionId] = collapsed;
-    persistWorkflowStates();
-}
 
 function ensureStyleTag() {
     if (document.getElementById("responsive-overlay-styles")) {
@@ -848,6 +723,12 @@ app.registerExtension({
         const root = createOverlayRoot();
         const toggle = await buildToggleButton();
 
+        configureMediaTargets({
+            currentMediaId: CURRENT_MEDIA_ID,
+            outputsContainerId: OUTPUTS_ID,
+            resultsGridId: RESULTS_GRID_ID
+        });
+
         if (!root || !toggle) {
             console.warn(`[${EXTENSION_NAME}] Unable to bootstrap overlay UI.`);
             return;
@@ -880,176 +761,3 @@ app.registerExtension({
         };
     }
 });
-
-function handleExecutionOutput(detail) {
-    if (!detail || !detail.output) {
-        return;
-    }
-
-    const mediaItems = extractMediaFromOutput(detail.output);
-    if (!mediaItems.length) {
-        return;
-    }
-
-    mediaItems.forEach((item) => {
-        const key = item.url;
-        const existingIndex = latestOutputs.findIndex((entry) => entry.key === key);
-        if (existingIndex !== -1) {
-            latestOutputs.splice(existingIndex, 1);
-        }
-
-        latestOutputs.unshift({
-            ...item,
-            key,
-            node: detail.node,
-            promptId: detail.prompt_id,
-            timestamp: Date.now()
-        });
-    });
-
-    if (latestOutputs.length > MAX_OUTPUT_ITEMS) {
-        latestOutputs.length = MAX_OUTPUT_ITEMS;
-    }
-
-    renderOutputs();
-}
-
-function extractMediaFromOutput(output) {
-    const collected = [];
-
-    const visit = (value) => {
-        if (!value) {
-            return;
-        }
-        if (Array.isArray(value)) {
-            value.forEach(visit);
-            return;
-        }
-        if (typeof value === "object") {
-            if (value.filename || value.file_name) {
-                const filename = value.filename || value.file_name;
-                const subfolder = value.subfolder || value.sub_folder || value.folder || "";
-                const storageType = value.type || value.storage || "output";
-                const url = buildMediaUrl(filename, subfolder, storageType);
-                if (url) {
-                    const ext = filename.split(".").pop()?.toLowerCase() || "";
-                    const videoExts = ["mp4", "webm", "mov", "avi", "mkv"];
-                    const kind = videoExts.includes(ext) ? "video" : "image";
-                    collected.push({
-                        url,
-                        filename,
-                        subfolder,
-                        storageType,
-                        kind
-                    });
-                }
-                return;
-            }
-            Object.values(value).forEach(visit);
-        }
-    };
-
-    visit(output);
-    return collected;
-}
-
-function buildMediaUrl(filename, subfolder, storageType) {
-    if (!filename) {
-        return "";
-    }
-    const params = new URLSearchParams();
-    params.set("filename", filename);
-    params.set("type", storageType || "output");
-    if (subfolder) {
-        params.set("subfolder", subfolder);
-    }
-    params.set("preview", "1");
-    return `/api/view?${params.toString()}`;
-}
-
-function renderOutputs() {
-    const container = document.getElementById(OUTPUTS_ID);
-    const grid = document.getElementById(RESULTS_GRID_ID);
-    const meta = document.getElementById("responsive-overlay-results-meta");
-
-    if (!container || !grid || !meta) {
-        return;
-    }
-
-    if (!latestOutputs.length) {
-        container.classList.add("hidden");
-        grid.innerHTML = "";
-        meta.textContent = "Run the workflow to see images or videos here.";
-        renderCurrentMedia(null);
-        return;
-    }
-
-    container.classList.remove("hidden");
-    grid.innerHTML = "";
-    meta.textContent = `Showing ${latestOutputs.length} recent file${latestOutputs.length > 1 ? "s" : ""}`;
-
-    renderCurrentMedia(latestOutputs[0]);
-
-    latestOutputs.forEach((item) => {
-        const mediaElement = item.kind === "video"
-            ? $el("video", {
-                src: item.url,
-                controls: true,
-                loop: true,
-                playsInline: true,
-                preload: "metadata"
-            })
-            : $el("img", {
-                src: item.url,
-                loading: "lazy",
-                alt: item.filename
-            });
-
-        const figure = $el("figure", { className: "responsive-overlay__result" }, [
-            mediaElement,
-            $el("figcaption", {}, [
-                $el("span", { className: "responsive-overlay__result-name" }, [item.filename]),
-                typeof item.node !== "undefined"
-                    ? $el("span", { className: "responsive-overlay__result-node" }, [`Node #${item.node}`])
-                    : null
-            ].filter(Boolean))
-        ]);
-
-        figure.addEventListener("click", () => {
-            window.open(item.url, "_blank", "noopener");
-        });
-
-        grid.appendChild(figure);
-    });
-}
-
-function renderCurrentMedia(item) {
-    const container = document.getElementById(CURRENT_MEDIA_ID);
-    if (!container) {
-        return;
-    }
-
-    container.innerHTML = "";
-
-    if (!item) {
-        container.appendChild($el("p", { className: "responsive-overlay__empty" }, ["Generate to see the latest render here."]));
-        return;
-    }
-
-    const mediaElement = item.kind === "video"
-        ? $el("video", {
-            src: item.url,
-            controls: true,
-            autoplay: true,
-            loop: true,
-            playsInline: true,
-            preload: "metadata"
-        })
-        : $el("img", {
-            src: item.url,
-            loading: "eager",
-            alt: item.filename
-        });
-
-    container.appendChild(mediaElement);
-}
