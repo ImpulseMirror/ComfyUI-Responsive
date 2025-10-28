@@ -25,9 +25,10 @@ On startup a new “Responsive” button with a dashboard icon will appear in th
 2. Click the **Responsive** toggle (or press `Alt + R`) to open the overlay.
 3. Select a node from the left sidebar to inspect or edit its widgets in the main panel; the selected entry stays highlighted for clarity.
 4. Drag group headers or individual nodes to curate the column order; changes are remembered per workflow, and you can collapse groups for a simplified view.
-5. Adjust widget values as needed, then hit **Generate** to queue the workflow without leaving the overlay. The current render fills the right-hand column while the latest images/videos appear beneath it.
-6. Use the **Refresh** action if you add or reorder nodes while the overlay is visible.
-7. Click **Close** or press `Esc` to return to the traditional node canvas.
+5. Watch the progress bar and node highlights during execution—running nodes glow green with inline progress, completions fade, and any errors are flagged red.
+6. Adjust widget values as needed, then hit **Generate** to queue the workflow without leaving the overlay. The current render fills the right-hand column while the latest images/videos appear beneath it.
+7. Use the **Refresh** action if you add or reorder nodes while the overlay is visible.
+8. Click **Close** or press `Esc` to return to the traditional node canvas.
 
 ## Testing
 

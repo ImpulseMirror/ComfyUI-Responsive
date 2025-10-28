@@ -27,6 +27,9 @@ const OUTPUTS_ID = "responsive-overlay-outputs";
 const RESULTS_GRID_ID = "responsive-overlay-results-grid";
 const CURRENT_OUTPUT_ID = "responsive-overlay-current-output";
 const CURRENT_MEDIA_ID = "responsive-overlay-current-media";
+const PROGRESS_BAR_ID = "responsive-overlay-progress";
+const PROGRESS_FILL_ID = "responsive-overlay-progress-fill";
+const PROGRESS_TEXT_ID = "responsive-overlay-progress-text";
 
 const ACTIVE_CLASS = "responsive-overlay-is-open";
 const SELECTED_CLASS = "responsive-overlay__node--selected";
@@ -38,6 +41,216 @@ let scheduledRefresh = false;
 let pendingRefreshForce = false;
 let draggedNodeId = null;
 let draggedSectionId = null;
+
+const nodeStatuses = new Map();
+const nodeTitleCache = new Map();
+const executionTracking = {
+    active: false,
+    promptId: null,
+    totalNodes: 0,
+    completed: 0,
+    currentNodeId: null,
+    currentNodeLabel: '',
+    currentNodeProgress: { value: 0, max: 1 },
+    percent: 0,
+    errorNodeId: null
+};
+
+function normalizeNodeId(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+    const str = String(value);
+    const colonIndex = str.indexOf(':');
+    return colonIndex === -1 ? str : str.slice(0, colonIndex);
+}
+
+function getNodeTitle(nodeId) {
+    if (nodeTitleCache.has(nodeId)) {
+        return nodeTitleCache.get(nodeId);
+    }
+    const graph = app.graph;
+    let node = null;
+    if (graph) {
+        node = graph.getNodeById?.(Number(nodeId)) || graph._nodes?.find((n) => String(n.id) === nodeId) || null;
+    }
+    const title = node?.title || node?.type || `Node ${nodeId}`;
+    nodeTitleCache.set(nodeId, title);
+    return title;
+}
+
+function setNodeTitleCache(nodeId, title) {
+    if (!nodeId) {
+        return;
+    }
+    nodeTitleCache.set(String(nodeId), title || getNodeTitle(String(nodeId)));
+}
+
+function initializeNodeStatuses(nodes) {
+    nodeStatuses.clear();
+    nodes.forEach((node) => {
+        const id = String(node.id);
+        nodeStatuses.set(id, { state: executionTracking.active ? 'pending' : 'idle', progress: null });
+    });
+    updateNodeStatusDisplayAll();
+}
+
+function setNodeStatus(nodeId, state, progress) {
+    if (!nodeId) {
+        return;
+    }
+    const id = String(nodeId);
+    const current = nodeStatuses.get(id) || { state: 'idle', progress: null };
+    const next = {
+        state: state ?? current.state,
+        progress: progress !== undefined ? progress : current.progress
+    };
+    nodeStatuses.set(id, next);
+    updateNodeStatusDisplay(id);
+    if (next.state === 'completed' || next.state === 'error' || current.state === 'completed' || current.state === 'error') {
+        recalculateCompletedCount();
+    } else if (next.state === 'running') {
+        updateOverallProgress();
+    }
+}
+
+function updateNodeStatusDisplayAll() {
+    nodeStatuses.forEach((_value, nodeId) => updateNodeStatusDisplay(nodeId));
+}
+
+function updateNodeStatusDisplay(nodeId) {
+    const selector = `[data-node-id="${CSS.escape(String(nodeId))}"]`;
+    document.querySelectorAll(selector).forEach((button) => {
+        applyStatusClasses(button, nodeStatuses.get(String(nodeId)) || { state: 'idle', progress: null });
+    });
+}
+
+function applyStatusClasses(button, status) {
+    if (!button) {
+        return;
+    }
+    button.classList.remove('responsive-overlay__node--running', 'responsive-overlay__node--completed', 'responsive-overlay__node--error');
+    if (!status) {
+        removeNodeProgressBar(button);
+        return;
+    }
+    switch (status.state) {
+        case 'running':
+            button.classList.add('responsive-overlay__node--running');
+            updateNodeProgressBar(button, status.progress);
+            break;
+        case 'completed':
+            button.classList.add('responsive-overlay__node--completed');
+            removeNodeProgressBar(button);
+            break;
+        case 'error':
+            button.classList.add('responsive-overlay__node--error');
+            removeNodeProgressBar(button);
+            break;
+        case 'pending':
+        default:
+            removeNodeProgressBar(button);
+            break;
+    }
+}
+
+function updateNodeProgressBar(button, progress) {
+    const percent = progress && progress.max ? Math.min(1, Math.max(0, progress.value / progress.max)) : 0;
+    let bar = button.querySelector('.responsive-overlay__node-progress');
+    if (percent <= 0) {
+        if (bar) {
+            bar.remove();
+        }
+        return;
+    }
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.className = 'responsive-overlay__node-progress';
+        button.prepend(bar);
+    }
+    bar.style.width = `${percent * 100}%`;
+}
+
+function removeNodeProgressBar(button) {
+    const bar = button.querySelector('.responsive-overlay__node-progress');
+    if (bar) {
+        bar.remove();
+    }
+}
+
+function resetExecutionTracking() {
+    executionTracking.active = false;
+    executionTracking.promptId = null;
+    executionTracking.totalNodes = 0;
+    executionTracking.completed = 0;
+    executionTracking.currentNodeId = null;
+    executionTracking.currentNodeLabel = '';
+    executionTracking.currentNodeProgress = { value: 0, max: 1 };
+    executionTracking.percent = 0;
+    executionTracking.errorNodeId = null;
+    updateProgressBar();
+}
+
+function updateProgressBar() {
+    const bar = document.getElementById(PROGRESS_BAR_ID);
+    const fill = document.getElementById(PROGRESS_FILL_ID);
+    const label = document.getElementById(PROGRESS_TEXT_ID);
+    if (!bar || !fill || !label) {
+        return;
+    }
+    if (!executionTracking.active) {
+        bar.classList.add('hidden');
+        fill.style.width = '0%';
+        label.textContent = '';
+        return;
+    }
+    bar.classList.remove('hidden');
+    const percent = Math.max(0, Math.min(1, executionTracking.percent || 0));
+    fill.style.width = `${percent * 100}%`;
+    label.textContent = executionTracking.currentNodeLabel ? `${Math.round(percent * 100)}% — ${executionTracking.currentNodeLabel}` : `${Math.round(percent * 100)}%`;
+}
+
+function updateOverallProgress() {
+    if (!executionTracking.active) {
+        executionTracking.percent = 0;
+        updateProgressBar();
+        return;
+    }
+    const total = executionTracking.totalNodes || 0;
+    const completed = executionTracking.completed || 0;
+    let percent = total > 0 ? completed / total : 0;
+    const progress = executionTracking.currentNodeProgress;
+    if (executionTracking.currentNodeId && progress && progress.max) {
+        percent += (progress.value / progress.max) / Math.max(total, 1);
+    }
+    executionTracking.percent = percent;
+    updateProgressBar();
+}
+
+function recalculateCompletedCount() {
+    let count = 0;
+    nodeStatuses.forEach((status) => {
+        if (status.state === 'completed') {
+            count += 1;
+        }
+    });
+    executionTracking.completed = count;
+    updateOverallProgress();
+}
+
+function setCurrentRunningNode(nodeId, progress) {
+    if (!nodeId) {
+        executionTracking.currentNodeId = null;
+        executionTracking.currentNodeLabel = '';
+        executionTracking.currentNodeProgress = { value: 0, max: 1 };
+        updateOverallProgress();
+        return;
+    }
+    executionTracking.currentNodeId = String(nodeId);
+    executionTracking.currentNodeLabel = getNodeTitle(String(nodeId));
+    executionTracking.currentNodeProgress = progress || { value: 0, max: 1 };
+    updateOverallProgress();
+}
 
 function ensureStyleTag() {
     if (document.getElementById("responsive-overlay-styles")) {
@@ -132,6 +345,12 @@ function createOverlayRoot() {
 
     const root = $el("div", { id: OVERLAY_ID, className: "responsive-overlay hidden" }, [
         $el("div", { className: "responsive-overlay__shell" }, [
+            $el("div", { id: PROGRESS_BAR_ID, className: "responsive-overlay__progress hidden" }, [
+                $el("div", { className: "responsive-overlay__progress-track" }, [
+                    $el("div", { className: "responsive-overlay__progress-fill", id: PROGRESS_FILL_ID }, []),
+                    $el("span", { className: "responsive-overlay__progress-label", id: PROGRESS_TEXT_ID }, [])
+                ])
+            ]),
             $el("header", { className: "responsive-overlay__header" }, [
                 $el("div", { className: "responsive-overlay__header-group" }, [
                     $el("h2", {}, ["Workflow Overview"]),
@@ -216,6 +435,13 @@ function renderWorkflow(force = false) {
     const graph = app.graph;
     const graphGroups = graph?._groups ? [...graph._groups] : [];
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    nodes.forEach((node) => {
+        const idStr = String(node.id);
+        setNodeTitleCache(idStr, node.title || node.type);
+        if (!nodeStatuses.has(idStr)) {
+            nodeStatuses.set(idStr, { state: executionTracking.active ? "pending" : "idle", progress: null });
+        }
+    });
     const groupedNodeIds = new Set();
     const sections = [];
 
@@ -389,6 +615,7 @@ function renderWorkflow(force = false) {
         nodesInSection.forEach((node) => {
             const display = mapNodeToDisplay(node);
             const nodeId = node.id;
+            setNodeTitleCache(nodeId, display.title || display.type);
             const button = $el("button", {
                 className: "responsive-overlay__node",
                 dataset: { nodeId: String(nodeId), sectionId },
@@ -476,6 +703,8 @@ function renderWorkflow(force = false) {
             if (nodeId === selectedNodeId) {
                 button.classList.add(SELECTED_CLASS);
             }
+
+            applyStatusClasses(button, nodeStatuses.get(String(nodeId)) || { state: executionTracking.active ? "pending" : "idle", progress: null });
 
             itemsContainer.appendChild(button);
         });
@@ -701,6 +930,139 @@ function setOverlayState(open) {
     }
 }
 
+function handleExecutionStartEvent(event) {
+    executionTracking.active = true;
+    executionTracking.promptId = event?.detail?.prompt_id ?? null;
+    const nodes = getGraphNodes();
+    executionTracking.totalNodes = nodes.length || 0;
+    executionTracking.completed = 0;
+    executionTracking.currentNodeId = null;
+    executionTracking.currentNodeLabel = '';
+    executionTracking.currentNodeProgress = { value: 0, max: 1 };
+    executionTracking.percent = 0;
+    executionTracking.errorNodeId = null;
+    initializeNodeStatuses(nodes);
+    updateProgressBar();
+}
+
+function handleExecutionCachedEvent(event) {
+    const nodes = event?.detail?.nodes || [];
+    nodes.forEach((nodeId) => {
+        const normalized = normalizeNodeId(nodeId);
+        if (normalized) {
+            setNodeStatus(normalized, 'completed');
+        }
+    });
+    recalculateCompletedCount();
+}
+
+function handleExecutionSuccessEvent() {
+    setCurrentRunningNode(null);
+    executionTracking.active = false;
+    updateOverallProgress();
+}
+
+function handleExecutionInterruptedEvent() {
+    resetExecutionTracking();
+}
+
+function handleExecutionErrorEvent(event) {
+    const nodeId = normalizeNodeId(event?.detail?.node_id || event?.detail?.display_node_id);
+    if (nodeId) {
+        setNodeStatus(nodeId, 'error');
+        executionTracking.errorNodeId = nodeId;
+    }
+    setCurrentRunningNode(null);
+    executionTracking.active = false;
+    updateOverallProgress();
+}
+
+function handleExecutingEvent(event) {
+    const detail = event?.detail;
+    if (typeof detail === 'string' || typeof detail === 'number') {
+        const nodeId = normalizeNodeId(detail);
+        if (nodeId) {
+            nodeStatuses.forEach((status, id) => {
+                if (status.state === 'running' && id !== String(nodeId)) {
+                    setNodeStatus(id, 'completed');
+                }
+            });
+            setCurrentRunningNode(nodeId, executionTracking.currentNodeProgress);
+            setNodeStatus(nodeId, 'running', executionTracking.currentNodeProgress);
+        }
+    } else {
+        setCurrentRunningNode(null);
+    }
+}
+
+function handleProgressEvent(event) {
+    const detail = event?.detail;
+    if (!detail) {
+        return;
+    }
+    const nodeId = normalizeNodeId(detail.node ?? detail.node_id ?? executionTracking.currentNodeId);
+    const progress = { value: detail.value ?? 0, max: detail.max ?? 1 };
+    if (nodeId) {
+        setCurrentRunningNode(nodeId, progress);
+        setNodeStatus(nodeId, 'running', progress);
+    } else if (executionTracking.currentNodeId) {
+        setCurrentRunningNode(executionTracking.currentNodeId, progress);
+        setNodeStatus(executionTracking.currentNodeId, 'running', progress);
+    } else {
+        updateOverallProgress();
+    }
+}
+
+function handleProgressStateEvent(event) {
+    const nodes = event?.detail?.nodes || {};
+    let updated = false;
+    for (const key in nodes) {
+        const nodeState = nodes[key];
+        const nodeId = normalizeNodeId(nodeState.display_node_id ?? nodeState.node_id ?? key);
+        if (!nodeId) {
+            continue;
+        }
+        switch (nodeState.state) {
+            case 'running': {
+                const progress = { value: nodeState.value ?? 0, max: nodeState.max ?? 1 };
+                setCurrentRunningNode(nodeId, progress);
+                setNodeStatus(nodeId, 'running', progress);
+                updated = true;
+                break;
+            }
+            case 'success':
+            case 'completed':
+            case 'done':
+                setNodeStatus(nodeId, 'completed');
+                updated = true;
+                break;
+            case 'error':
+                setNodeStatus(nodeId, 'error');
+                executionTracking.errorNodeId = nodeId;
+                updated = true;
+                break;
+            default:
+                break;
+        }
+    }
+    if (updated) {
+        recalculateCompletedCount();
+    }
+}
+
+function handleExecutedEvent(detail) {
+    if (!detail) {
+        return;
+    }
+    const nodeId = normalizeNodeId(detail.node_id || detail.display_node_id || detail.id);
+    if (nodeId) {
+        setNodeStatus(nodeId, 'completed');
+        if (executionTracking.currentNodeId === nodeId) {
+            setCurrentRunningNode(null);
+        }
+        recalculateCompletedCount();
+    }
+}
 function toggleOverlay() {
     const root = document.getElementById(OVERLAY_ID);
     const isOpen = root && !root.classList.contains("hidden");
@@ -787,16 +1149,42 @@ app.registerExtension({
         if (api?.addEventListener) {
             const workflowHandler = () => scheduleOverlayRefresh(true);
             const graphHandler = () => scheduleOverlayRefresh();
+            const executionStartHandler = (event) => handleExecutionStartEvent(event);
+            const executionSuccessHandler = () => handleExecutionSuccessEvent();
+            const executionInterruptedHandler = () => handleExecutionInterruptedEvent();
+            const executionErrorHandler = (event) => handleExecutionErrorEvent(event);
+            const executionCachedHandler = (event) => handleExecutionCachedEvent(event);
+            const executingHandler = (event) => handleExecutingEvent(event);
+            const progressHandler = (event) => handleProgressEvent(event);
+            const progressStateHandler = (event) => handleProgressStateEvent(event);
             const executedHandler = (event) => {
-                handleExecutionOutput(event?.detail);
+                const detail = event?.detail ?? event;
+                handleExecutedEvent(detail);
+                handleExecutionOutput(detail);
             };
 
             api.addEventListener("workflowLoaded", workflowHandler);
             api.addEventListener("graphChanged", graphHandler);
+            api.addEventListener("execution_start", executionStartHandler);
+            api.addEventListener("execution_success", executionSuccessHandler);
+            api.addEventListener("execution_interrupted", executionInterruptedHandler);
+            api.addEventListener("execution_error", executionErrorHandler);
+            api.addEventListener("execution_cached", executionCachedHandler);
+            api.addEventListener("executing", executingHandler);
+            api.addEventListener("progress", progressHandler);
+            api.addEventListener("progress_state", progressStateHandler);
             api.addEventListener("executed", executedHandler);
 
             registeredHandlers.push(["workflowLoaded", workflowHandler]);
             registeredHandlers.push(["graphChanged", graphHandler]);
+            registeredHandlers.push(["execution_start", executionStartHandler]);
+            registeredHandlers.push(["execution_success", executionSuccessHandler]);
+            registeredHandlers.push(["execution_interrupted", executionInterruptedHandler]);
+            registeredHandlers.push(["execution_error", executionErrorHandler]);
+            registeredHandlers.push(["execution_cached", executionCachedHandler]);
+            registeredHandlers.push(["executing", executingHandler]);
+            registeredHandlers.push(["progress", progressHandler]);
+            registeredHandlers.push(["progress_state", progressStateHandler]);
             registeredHandlers.push(["executed", executedHandler]);
         }
 
