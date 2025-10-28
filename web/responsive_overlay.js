@@ -248,16 +248,17 @@ function renderWorkflow(force = false) {
         .map((node) => node.id)
         .filter((id) => !groupedNodeIds.has(id));
 
-    if (ungroupedIds.length) {
+    ungroupedIds.forEach((nodeId, index) => {
+        const node = nodeById.get(nodeId);
         sections.push({
-            id: "group:ungrouped",
-            type: "ungrouped",
-            title: "Ungrouped",
+            id: `node:${nodeId}`,
+            type: "single",
+            title: null,
             group: null,
-            nodeIds: ungroupedIds,
-            orderHint: Number.MAX_SAFE_INTEGER
+            nodeIds: [nodeId],
+            orderHint: node?.pos?.[1] ?? index
         });
-    }
+    });
 
     if (!sections.length) {
         listEl.innerHTML = `
@@ -298,17 +299,45 @@ function renderWorkflow(force = false) {
             return;
         }
 
-        const nodeOrderIds = ensureNodeOrder(currentWorkflowKey, sectionId, section.nodeIds);
-        const nodesInSection = nodeOrderIds
-            .map((id) => nodeById.get(id))
-            .filter(Boolean);
+        const nodesInSection = (section.type === "group"
+            ? ensureNodeOrder(currentWorkflowKey, sectionId, section.nodeIds)
+            : section.nodeIds
+        ).map((id) => nodeById.get(id)).filter(Boolean);
 
         const collapsed = section.type === "group" ? isGroupCollapsed(currentWorkflowKey, sectionId) : false;
 
+        const sectionClasses = ["responsive-overlay__group"];
+        if (section.type === "single") {
+            sectionClasses.push("responsive-overlay__group--single");
+        }
+
         const sectionEl = $el("div", {
-            className: `responsive-overlay__group${section.type === "ungrouped" ? " responsive-overlay__group--ungrouped" : ""}`,
+            className: sectionClasses.join(" "),
             dataset: { sectionId }
         });
+
+        const enableSectionDrop = (target) => {
+            target.addEventListener("dragover", (event) => {
+                if (!draggedSectionId || draggedSectionId === sectionId) {
+                    return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                sectionEl.classList.add("responsive-overlay__group--dragover");
+            });
+            target.addEventListener("dragleave", () => {
+                sectionEl.classList.remove("responsive-overlay__group--dragover");
+            });
+            target.addEventListener("drop", (event) => {
+                if (!draggedSectionId || draggedSectionId === sectionId) {
+                    return;
+                }
+                event.preventDefault();
+                sectionEl.classList.remove("responsive-overlay__group--dragover");
+                reorderSections(draggedSectionId, sectionId);
+                draggedSectionId = null;
+            });
+        };
 
         let itemsContainer = sectionEl;
 
@@ -345,26 +374,7 @@ function renderWorkflow(force = false) {
                 draggedSectionId = null;
             });
 
-            sectionEl.addEventListener("dragover", (event) => {
-                if (!draggedSectionId || draggedSectionId === sectionId) {
-                    return;
-                }
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-                sectionEl.classList.add("responsive-overlay__group--dragover");
-            });
-            sectionEl.addEventListener("dragleave", () => {
-                sectionEl.classList.remove("responsive-overlay__group--dragover");
-            });
-            sectionEl.addEventListener("drop", (event) => {
-                if (!draggedSectionId || draggedSectionId === sectionId) {
-                    return;
-                }
-                event.preventDefault();
-                sectionEl.classList.remove("responsive-overlay__group--dragover");
-                reorderSections(draggedSectionId, sectionId);
-                draggedSectionId = null;
-            });
+            enableSectionDrop(sectionEl);
 
             itemsContainer = $el("div", {
                 className: `responsive-overlay__group-items${collapsed ? " responsive-overlay__group-items--collapsed" : ""}`
@@ -372,6 +382,8 @@ function renderWorkflow(force = false) {
 
             sectionEl.appendChild(headerEl);
             sectionEl.appendChild(itemsContainer);
+        } else {
+            enableSectionDrop(sectionEl);
         }
 
         nodesInSection.forEach((node) => {
@@ -380,7 +392,7 @@ function renderWorkflow(force = false) {
             const button = $el("button", {
                 className: "responsive-overlay__node",
                 dataset: { nodeId: String(nodeId), sectionId },
-                draggable: section.type !== "group" || !collapsed,
+                draggable: section.type === "group" ? !collapsed : true,
                 onclick: () => {
                     setSelectedNode(nodeId);
                     renderNodeDetails(node);
@@ -400,7 +412,7 @@ function renderWorkflow(force = false) {
                 ])
             ]);
 
-            if (section.type !== "group" || !collapsed) {
+            if (section.type === "group" && !collapsed) {
                 button.addEventListener("dragstart", (event) => {
                     draggedNodeId = nodeId;
                     draggedSectionId = null;
@@ -428,6 +440,36 @@ function renderWorkflow(force = false) {
                     }
                     reorderNodes(sectionId, draggedNodeId, nodeId, nodesInSection.map((n) => n.id));
                     draggedNodeId = null;
+                });
+            } else if (section.type === "single") {
+                button.addEventListener("dragstart", (event) => {
+                    draggedSectionId = sectionId;
+                    draggedNodeId = null;
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", sectionId);
+                });
+                button.addEventListener("dragend", () => {
+                    draggedSectionId = null;
+                });
+                button.addEventListener("dragover", (event) => {
+                    if (!draggedSectionId || draggedSectionId === sectionId) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    button.classList.add("responsive-overlay__node--dragover");
+                });
+                button.addEventListener("dragleave", () => {
+                    button.classList.remove("responsive-overlay__node--dragover");
+                });
+                button.addEventListener("drop", (event) => {
+                    if (!draggedSectionId || draggedSectionId === sectionId) {
+                        return;
+                    }
+                    event.preventDefault();
+                    button.classList.remove("responsive-overlay__node--dragover");
+                    reorderSections(draggedSectionId, sectionId);
+                    draggedSectionId = null;
                 });
             }
 
