@@ -533,7 +533,7 @@ body.responsive-overlay-is-open {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 40px;
+    padding: clamp(16px, 4vw, 40px);
     backdrop-filter: blur(6px);
 }
 
@@ -544,7 +544,7 @@ body.responsive-overlay-is-open {
 .responsive-overlay__lightbox-content {
     position: relative;
     max-width: 90vw;
-    max-height: 90vh;
+    max-height: calc(100vh - clamp(80px, 8vw, 120px));
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -553,18 +553,26 @@ body.responsive-overlay-is-open {
 
 .responsive-overlay__lightbox-media {
     max-width: 90vw;
-    max-height: 80vh;
+    max-height: calc(100vh - clamp(160px, 12vw, 220px));
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 18px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
     background: #050505;
+    overflow: hidden;
 }
 
 .responsive-overlay__lightbox-media img,
 .responsive-overlay__lightbox-media video {
     display: block;
+    width: auto;
+    height: auto;
     max-width: 100%;
     max-height: 100%;
     border-radius: 18px;
+    object-fit: contain;
 }
 
 .responsive-overlay__lightbox-close {
