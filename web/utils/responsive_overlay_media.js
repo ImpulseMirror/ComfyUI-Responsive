@@ -204,7 +204,7 @@ function extractMediaFromOutput(output) {
     return collected;
 }
 
-function buildMediaUrl(filename, subfolder, storageType) {
+export function buildMediaUrl(filename, subfolder, storageType) {
     if (!filename) {
         return "";
     }
@@ -218,7 +218,7 @@ function buildMediaUrl(filename, subfolder, storageType) {
     return `/api/view?${params.toString()}`;
 }
 
-function buildVideoPlaybackUrl(filename, subfolder, storageType) {
+export function buildVideoPlaybackUrl(filename, subfolder, storageType) {
     if (!filename) {
         return "";
     }
@@ -233,7 +233,7 @@ function buildVideoPlaybackUrl(filename, subfolder, storageType) {
     return `/api/viewvideo?${params.toString()}`;
 }
 
-function createPreviewElement(item, attributes = {}) {
+export function createPreviewElement(item, attributes = {}) {
     if (item.kind === "video") {
         const video = document.createElement("video");
         video.className = "responsive-overlay__preview-video";
@@ -257,7 +257,7 @@ function createPreviewElement(item, attributes = {}) {
     return createImageElement(item.url, item.filename, attributes);
 }
 
-function createImageElement(src, alt, attributes = {}) {
+export function createImageElement(src, alt, attributes = {}) {
     const img = document.createElement("img");
     img.src = src;
     img.alt = alt;

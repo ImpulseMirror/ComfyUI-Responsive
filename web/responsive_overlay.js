@@ -17,8 +17,10 @@ import {
     handleExecutionOutput,
     renderOutputs,
     openLightboxMedia,
-    closeLightboxMedia
+    closeLightboxMedia,
+    createPreviewElement
 } from "./utils/responsive_overlay_media.js";
+import { collectNodeMediaPreviews } from "./utils/responsive_overlay_node_media.js";
 
 const EXTENSION_NAME = "ComfyUI.ResponsiveOverlay";
 const TOGGLE_ID = "responsive-overlay-toggle";
@@ -847,8 +849,55 @@ function renderNodeDetails(node) {
         });
     }
 
+    const mediaPreviews = collectNodeMediaPreviews(node);
+
     panel.appendChild(header);
     panel.appendChild(widgetContainer);
+
+    if (mediaPreviews.length) {
+        const previewList = $el("div", { className: "responsive-overlay__node-preview-grid" }, []);
+
+        mediaPreviews.forEach((item) => {
+            const figure = $el("figure", {
+                className: "responsive-overlay__node-preview",
+                dataset: { mediaKind: item.kind }
+            }, []);
+
+            const mediaAttributes = item.kind === "video"
+                ? { preload: "metadata", playsinline: "true", muted: "true" }
+                : { loading: "lazy" };
+
+            const mediaEl = createPreviewElement(item, mediaAttributes);
+            mediaEl.classList.add("responsive-overlay__node-preview-media");
+            if (mediaEl.tagName === "VIDEO") {
+                mediaEl.muted = true;
+                mediaEl.controls = true;
+                mediaEl.loop = false;
+            }
+            mediaEl.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openLightboxMedia(item);
+            });
+
+            figure.appendChild(mediaEl);
+            figure.appendChild($el("figcaption", { className: "responsive-overlay__node-preview-caption" }, [
+                item.label || item.filename || "Preview"
+            ]));
+
+            figure.addEventListener("click", (event) => {
+                event.preventDefault();
+                openLightboxMedia(item);
+            });
+
+            previewList.appendChild(figure);
+        });
+
+        panel.appendChild($el("section", { className: "responsive-overlay__node-previews" }, [
+            $el("h4", { className: "responsive-overlay__node-preview-heading" }, ["Node Preview"]),
+            previewList
+        ]));
+    }
 }
 
 function setSelectedNode(nodeId) {
