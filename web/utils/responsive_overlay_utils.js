@@ -82,6 +82,9 @@ export function getWidgetDescriptor(widget, index = 0) {
         attributes: {}
     };
 
+    const lowerType = String(widget.type || "").toLowerCase();
+    const lowerName = String(widget.name || "").toLowerCase();
+
     switch (widget.type) {
         case "combo":
             descriptor.control = "select";
@@ -108,16 +111,20 @@ export function getWidgetDescriptor(widget, index = 0) {
             descriptor.control = "checkbox";
             descriptor.value = !!widget.value;
             break;
-        case "image":
-            descriptor.control = "image";
-            descriptor.value = widget.value ?? "";
-            descriptor.attributes.accept = widget?.accept || "image/*";
-            descriptor.attributes.uploadType = widget?.upload_type || widget?.directory || widget?.path || "input";
-            descriptor.attributes.subfolder = widget?.subfolder || "";
-            break;
         default:
             descriptor.control = "textarea";
             descriptor.value = widget.value ?? "";
+    }
+
+    const isLikelyImage = lowerType === "image" || lowerName.includes("image") || lowerName.includes("mask") || lowerName.includes("upload") || typeof widget?.directory === "string" || typeof widget?.path === "string";
+
+    if (isLikelyImage) {
+        descriptor.control = "image";
+        descriptor.value = widget.value ?? "";
+        descriptor.attributes = descriptor.attributes || {};
+        descriptor.attributes.accept = widget?.accept || "image/*";
+        descriptor.attributes.uploadType = widget?.upload_type || widget?.directory || widget?.path || "input";
+        descriptor.attributes.subfolder = widget?.subfolder || "";
     }
 
     return descriptor;

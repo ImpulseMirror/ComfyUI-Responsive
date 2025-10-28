@@ -835,60 +835,7 @@ function renderNodeDetails(node) {
                     });
                     break;
                 case "image": {
-                    const fileWrapper = $el("div", { className: "responsive-overlay__file-input" }, []);
-                    const textValue = typeof descriptor.value === "string" ? descriptor.value : "";
-                    const readonlyInput = $el("input", {
-                        className: "responsive-overlay__widget-input responsive-overlay__widget-input--readonly",
-                        type: "text",
-                        value: textValue,
-                        readOnly: true,
-                        placeholder: "No file selected"
-                    });
-
-                    const actions = $el("div", { className: "responsive-overlay__file-actions" }, []);
-                    const uploadButton = $el("button", { type: "button", className: "responsive-overlay__file-button" }, ["Choose File"]);
-                    const hiddenInput = $el("input", {
-                        type: "file",
-                        accept: descriptor.attributes?.accept || "image/*",
-                        className: "responsive-overlay__file-hidden"
-                    });
-
-                    uploadButton.addEventListener("click", () => {
-                        hiddenInput.click();
-                    });
-
-                    hiddenInput.addEventListener("change", async (event) => {
-                        const file = event.target?.files?.[0];
-                        if (!file) {
-                            return;
-                        }
-
-                        const originalText = uploadButton.textContent;
-                        uploadButton.disabled = true;
-                        uploadButton.textContent = "Uploading…";
-
-                        try {
-                            const uploadResult = await uploadImageForWidget(node, widget, file, descriptor);
-                            if (uploadResult && uploadResult.value !== undefined) {
-                                readonlyInput.value = uploadResult.displayValue ?? uploadResult.value ?? "";
-                                updateWidgetValue(node, widget, uploadResult.value);
-                                scheduleOverlayRefresh(true);
-                            }
-                        } catch (error) {
-                            console.error(`[${EXTENSION_NAME}] Failed to upload image`, error);
-                        } finally {
-                            hiddenInput.value = "";
-                            uploadButton.disabled = false;
-                            uploadButton.textContent = originalText;
-                        }
-                    });
-
-                    actions.appendChild(uploadButton);
-                    fileWrapper.appendChild(readonlyInput);
-                    fileWrapper.appendChild(actions);
-                    fileWrapper.appendChild(hiddenInput);
-                    row.appendChild(fileWrapper);
-                    input = null;
+                    input = createImageWidgetControls(node, widget, descriptor);
                     break;
                 }
                 default:
@@ -1028,7 +975,95 @@ function closeLightbox() {
     closeLightboxMedia();
 }
 
-async function uploadImageForWidget(node, widget, file, descriptor) {
+function createImageWidgetControls(node, widget, descriptor) {
+    const wrapper = $el("div", { className: "responsive-overlay__file-input" }, []);
+    const value = typeof descriptor.value === "string" ? descriptor.value : "";
+
+    const actions = $el("div", { className: "responsive-overlay__file-actions" }, []);
+    const chooseButton = $el("button", { type: "button", className: "responsive-overlay__file-button" }, ["Choose File"]);
+    const pasteButton = $el("button", { type: "button", className: "responsive-overlay__file-button" }, ["Paste URL"]);
+
+    const fileInput = $el("input", {
+        type: "file",
+        accept: descriptor.attributes?.accept || "image/*",
+        className: "responsive-overlay__file-hidden"
+    });
+
+    const urlInput = $el("input", {
+        type: "text",
+        className: "responsive-overlay__widget-input responsive-overlay__widget-input--readonly",
+        placeholder: "No file selected",
+        value
+    });
+    urlInput.classList.toggle("responsive-overlay__widget-input--empty", !value);
+
+    const resetState = () => {
+        fileInput.value = "";
+    };
+
+    chooseButton.addEventListener("click", () => {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener("change", async (event) => {
+        const file = event.target?.files?.[0];
+        if (!file) {
+            return;
+        }
+
+        const originalText = chooseButton.textContent;
+        chooseButton.disabled = true;
+        chooseButton.textContent = "Uploading…";
+
+        try {
+            const uploadResult = await uploadImageFile(node, widget, file, descriptor);
+            if (uploadResult && uploadResult.value !== undefined) {
+                urlInput.value = uploadResult.displayValue ?? uploadResult.value ?? "";
+                urlInput.classList.toggle("responsive-overlay__widget-input--empty", !urlInput.value);
+                updateWidgetValue(node, widget, uploadResult.value);
+                scheduleOverlayRefresh(true);
+            }
+        } catch (error) {
+            console.error(`[${EXTENSION_NAME}] Failed to upload image`, error);
+        } finally {
+            chooseButton.disabled = false;
+            chooseButton.textContent = originalText;
+            resetState();
+        }
+    });
+
+    pasteButton.addEventListener("click", async () => {
+        let clipboardText = "";
+        if (navigator.clipboard?.readText) {
+            try {
+                clipboardText = await navigator.clipboard.readText();
+            } catch (error) {
+                console.warn(`[${EXTENSION_NAME}] Unable to read clipboard`, error);
+            }
+        }
+
+        const promptValue = window.prompt("Enter image URL or path", clipboardText || value || "");
+        if (!promptValue) {
+            return;
+        }
+
+        urlInput.value = promptValue;
+        urlInput.classList.toggle("responsive-overlay__widget-input--empty", !promptValue);
+        updateWidgetValue(node, widget, promptValue);
+        scheduleOverlayRefresh(true);
+    });
+
+    actions.appendChild(chooseButton);
+    actions.appendChild(pasteButton);
+
+    wrapper.appendChild(urlInput);
+    wrapper.appendChild(actions);
+    wrapper.appendChild(fileInput);
+
+    return wrapper;
+}
+
+async function uploadImageFile(node, widget, file, descriptor) {
     if (!file) {
         return null;
     }
@@ -1036,7 +1071,7 @@ async function uploadImageForWidget(node, widget, file, descriptor) {
     const form = new FormData();
     form.append("image", file, file.name);
 
-    const uploadType = descriptor?.attributes?.uploadType || "input";
+    const uploadType = descriptor?.attributes?.uploadType || widget?.uploadType || widget?.typeDir || "input";
     if (uploadType) {
         form.append("type", uploadType);
     }

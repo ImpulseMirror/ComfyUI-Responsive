@@ -1,6 +1,6 @@
 import { buildMediaUrl, buildVideoPlaybackUrl } from "./responsive_overlay_media.js";
 
-const MEDIA_WIDGET_TYPES = new Set(["image", "preview", "image_preview", "video", "media"]);
+const MEDIA_WIDGET_TYPES = new Set(["image", "preview", "image_preview", "video", "media", "mask"]);
 const VIDEO_FILE_EXTENSIONS = new Set(["mp4", "webm", "mov", "mkv", "avi", "gifv"]);
 
 export function collectNodeMediaPreviews(node) {
@@ -81,7 +81,7 @@ function normalizeWidgetMedia(widget) {
         return [];
     }
 
-    if (!MEDIA_WIDGET_TYPES.has(String(widget.type || "").toLowerCase())) {
+    if (!isLikelyMediaWidget(widget)) {
         return [];
     }
 
@@ -99,6 +99,29 @@ function normalizeWidgetMedia(widget) {
         defaultKind: widgetKind,
         defaultStorage
     });
+}
+
+function isLikelyMediaWidget(widget) {
+    if (!widget) {
+        return false;
+    }
+    const type = String(widget.type || "").toLowerCase();
+    if (MEDIA_WIDGET_TYPES.has(type)) {
+        return true;
+    }
+    const name = String(widget.name || "").toLowerCase();
+    if (name.includes("image") || name.includes("preview") || name.includes("video") || name.includes("mask")) {
+        return true;
+    }
+    if (typeof widget.value === "string") {
+        if (/\.(png|jpg|jpeg|gif|webp|bmp|mp4|webm|mov)$/i.test(widget.value)) {
+            return true;
+        }
+        if (widget.value.includes("/api/view") || widget.value.includes("/view")) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function normalizeMediaValue(value, options = {}) {
@@ -280,6 +303,12 @@ function inferWidgetStorage(widget, kind) {
         if (widget.value.includes("type=output")) {
             return "output";
         }
+    }
+
+    const widgetName = String(widget?.name || "").toLowerCase();
+    const widgetType = String(widget?.type || "").toLowerCase();
+    if (widgetType === "image" || widgetType === "mask" || widgetName.includes("image") || widgetName.includes("mask") || widgetName.includes("upload")) {
+        return "input";
     }
 
     if (kind === "video") {

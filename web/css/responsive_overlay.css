@@ -502,9 +502,13 @@
     border-style: dashed;
 }
 
+.responsive-overlay__widget-input--empty {
+    opacity: 0.6;
+}
+
 .responsive-overlay__file-input {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
 }
 
