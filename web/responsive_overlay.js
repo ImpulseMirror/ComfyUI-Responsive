@@ -25,43 +25,63 @@ function ensureStyleTag() {
     document.head.appendChild(linkEl);
 }
 
-function getHeaderContainer() {
-    if (app?.ui?.topBar) {
-        return app.ui.topBar;
+async function buildToggleButton() {
+    const existing = document.getElementById(TOGGLE_ID);
+    if (existing) {
+        return existing;
     }
 
-    const managerButton = document.querySelector("#comfyui-manager-button");
-    if (managerButton?.parentElement) {
-        return managerButton.parentElement;
+    const placeInMenu = (element) => {
+        element.id = TOGGLE_ID;
+        const modernTarget = app?.menu?.settingsGroup?.element;
+        if (modernTarget?.parentElement) {
+            modernTarget.before(element);
+            return true;
+        }
+
+        const menu = document.querySelector(".comfy-menu")
+            || document.querySelector("#top-bar-right")
+            || document.querySelector("#top-bar");
+
+        if (menu) {
+            menu.appendChild(element);
+            return true;
+        }
+
+        return false;
+    };
+
+    try {
+        const { ComfyButton } = await import("../../scripts/ui/components/button.js");
+        const comfyButton = new ComfyButton({
+            tooltip: "Toggle responsive overlay",
+            content: "Responsive",
+            classList: "comfyui-button comfyui-menu-mobile-collapse",
+            action: () => toggleOverlay()
+        });
+
+        const element = comfyButton.element;
+        if (!placeInMenu(element)) {
+            document.body.appendChild(element);
+        }
+
+        return element;
+    } catch (error) {
+        console.debug(`[${EXTENSION_NAME}] Falling back to legacy button placement`, error);
+        const button = document.createElement("button");
+        button.id = TOGGLE_ID;
+        button.type = "button";
+        button.className = "comfyui-button comfyui-menu-mobile-collapse";
+        button.textContent = "Responsive";
+        button.title = "Toggle responsive overlay";
+        button.addEventListener("click", () => toggleOverlay());
+
+        if (!placeInMenu(button)) {
+            document.body.appendChild(button);
+        }
+
+        return button;
     }
-
-    return document.querySelector("#top-bar-right") || document.querySelector("#top-bar") || document.body;
-}
-
-function buildToggleButton() {
-    if (document.getElementById(TOGGLE_ID)) {
-        return document.getElementById(TOGGLE_ID);
-    }
-
-    const button = $el("button.comfyui-header-button", {
-        id: TOGGLE_ID,
-        title: "Responsive overlay",
-        onclick: () => toggleOverlay()
-    }, [
-        $el("span.material-symbols-outlined", {}, ["dashboard_customize"]),
-        $el("span", { className: "responsive-overlay-label" }, ["Responsive"])
-    ]);
-
-    const header = getHeaderContainer();
-    if (header) {
-        header.appendChild(button);
-    } else if (app.appendToHeader) {
-        app.appendToHeader(button);
-    } else {
-        console.warn(`[${EXTENSION_NAME}] Unable to locate header container for toggle button.`);
-    }
-
-    return button;
 }
 
 function createOverlayRoot() {
@@ -325,7 +345,7 @@ app.registerExtension({
     async setup() {
         ensureStyleTag();
         const root = createOverlayRoot();
-        const toggle = buildToggleButton();
+        const toggle = await buildToggleButton();
 
         if (!root || !toggle) {
             console.warn(`[${EXTENSION_NAME}] Unable to bootstrap overlay UI.`);
