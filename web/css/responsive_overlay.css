@@ -173,6 +173,17 @@
     outline: 2px dashed rgba(129, 140, 248, 0.65);
 }
 
+.responsive-overlay__group--ungrouped {
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin-bottom: 10px;
+}
+
+.responsive-overlay__group--ungrouped .responsive-overlay__node {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .responsive-overlay__content {
     padding: 22px;
     overflow-y: auto;

@@ -303,69 +303,76 @@ function renderWorkflow(force = false) {
             .map((id) => nodeById.get(id))
             .filter(Boolean);
 
-        const collapsed = isGroupCollapsed(currentWorkflowKey, sectionId);
+        const collapsed = section.type === "group" ? isGroupCollapsed(currentWorkflowKey, sectionId) : false;
 
         const sectionEl = $el("div", {
-            className: "responsive-overlay__group",
+            className: `responsive-overlay__group${section.type === "ungrouped" ? " responsive-overlay__group--ungrouped" : ""}`,
             dataset: { sectionId }
         });
 
-        const toggleButton = $el("button", {
-            className: `responsive-overlay__group-toggle${collapsed ? " collapsed" : ""}`,
-            "aria-expanded": String(!collapsed),
-            "aria-label": `${collapsed ? "Expand" : "Collapse"} ${section.title}`.trim(),
-            onclick: (event) => {
+        let itemsContainer = sectionEl;
+
+        if (section.type === "group") {
+            const toggleButton = $el("button", {
+                className: `responsive-overlay__group-toggle${collapsed ? " collapsed" : ""}`,
+                "aria-expanded": String(!collapsed),
+                "aria-label": `${collapsed ? "Expand" : "Collapse"} ${section.title}`.trim(),
+                onclick: (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const nextState = !isGroupCollapsed(currentWorkflowKey, sectionId);
+                    setGroupCollapsed(currentWorkflowKey, sectionId, nextState);
+                    scheduleOverlayRefresh(true);
+                }
+            }, [collapsed ? "►" : "▼"]);
+
+            const headerEl = $el("div", {
+                className: "responsive-overlay__group-header",
+                draggable: true
+            }, [
+                toggleButton,
+                $el("span", { className: "responsive-overlay__group-title" }, [section.title]),
+                $el("span", { className: "responsive-overlay__group-count" }, [`${nodesInSection.length}`])
+            ]);
+
+            headerEl.addEventListener("dragstart", (event) => {
+                draggedSectionId = sectionId;
+                draggedNodeId = null;
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", sectionId);
+            });
+            headerEl.addEventListener("dragend", () => {
+                draggedSectionId = null;
+            });
+
+            sectionEl.addEventListener("dragover", (event) => {
+                if (!draggedSectionId || draggedSectionId === sectionId) {
+                    return;
+                }
                 event.preventDefault();
-                event.stopPropagation();
-                const nextState = !isGroupCollapsed(currentWorkflowKey, sectionId);
-                setGroupCollapsed(currentWorkflowKey, sectionId, nextState);
-                scheduleOverlayRefresh(true);
-            }
-        }, [collapsed ? "►" : "▼"]);
+                event.dataTransfer.dropEffect = "move";
+                sectionEl.classList.add("responsive-overlay__group--dragover");
+            });
+            sectionEl.addEventListener("dragleave", () => {
+                sectionEl.classList.remove("responsive-overlay__group--dragover");
+            });
+            sectionEl.addEventListener("drop", (event) => {
+                if (!draggedSectionId || draggedSectionId === sectionId) {
+                    return;
+                }
+                event.preventDefault();
+                sectionEl.classList.remove("responsive-overlay__group--dragover");
+                reorderSections(draggedSectionId, sectionId);
+                draggedSectionId = null;
+            });
 
-        const headerEl = $el("div", {
-            className: "responsive-overlay__group-header",
-            draggable: true
-        }, [
-            toggleButton,
-            $el("span", { className: "responsive-overlay__group-title" }, [section.title]),
-            $el("span", { className: "responsive-overlay__group-count" }, [`${nodesInSection.length}`])
-        ]);
+            itemsContainer = $el("div", {
+                className: `responsive-overlay__group-items${collapsed ? " responsive-overlay__group-items--collapsed" : ""}`
+            });
 
-        headerEl.addEventListener("dragstart", (event) => {
-            draggedSectionId = sectionId;
-            draggedNodeId = null;
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData("text/plain", sectionId);
-        });
-        headerEl.addEventListener("dragend", () => {
-            draggedSectionId = null;
-        });
-
-        sectionEl.addEventListener("dragover", (event) => {
-            if (!draggedSectionId || draggedSectionId === sectionId) {
-                return;
-            }
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "move";
-            sectionEl.classList.add("responsive-overlay__group--dragover");
-        });
-        sectionEl.addEventListener("dragleave", () => {
-            sectionEl.classList.remove("responsive-overlay__group--dragover");
-        });
-        sectionEl.addEventListener("drop", (event) => {
-            if (!draggedSectionId || draggedSectionId === sectionId) {
-                return;
-            }
-            event.preventDefault();
-            sectionEl.classList.remove("responsive-overlay__group--dragover");
-            reorderSections(draggedSectionId, sectionId);
-            draggedSectionId = null;
-        });
-
-        const itemsContainer = $el("div", {
-            className: `responsive-overlay__group-items${collapsed ? " responsive-overlay__group-items--collapsed" : ""}`
-        });
+            sectionEl.appendChild(headerEl);
+            sectionEl.appendChild(itemsContainer);
+        }
 
         nodesInSection.forEach((node) => {
             const display = mapNodeToDisplay(node);
@@ -373,7 +380,7 @@ function renderWorkflow(force = false) {
             const button = $el("button", {
                 className: "responsive-overlay__node",
                 dataset: { nodeId: String(nodeId), sectionId },
-                draggable: !collapsed,
+                draggable: section.type !== "group" || !collapsed,
                 onclick: () => {
                     setSelectedNode(nodeId);
                     renderNodeDetails(node);
@@ -393,7 +400,7 @@ function renderWorkflow(force = false) {
                 ])
             ]);
 
-            if (!collapsed) {
+            if (section.type !== "group" || !collapsed) {
                 button.addEventListener("dragstart", (event) => {
                     draggedNodeId = nodeId;
                     draggedSectionId = null;
@@ -431,8 +438,6 @@ function renderWorkflow(force = false) {
             itemsContainer.appendChild(button);
         });
 
-        sectionEl.appendChild(headerEl);
-        sectionEl.appendChild(itemsContainer);
         listEl.appendChild(sectionEl);
     });
 
