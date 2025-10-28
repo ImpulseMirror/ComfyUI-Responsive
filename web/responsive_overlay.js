@@ -23,9 +23,34 @@ let currentWorkflowKey = "";
 let scheduledRefresh = false;
 let pendingRefreshForce = false;
 let draggedNodeId = null;
+let draggedSectionId = null;
 const MAX_OUTPUT_ITEMS = 16;
 const latestOutputs = [];
 const workflowOrderCache = loadOrderMap();
+
+function createEmptyState() {
+    return {
+        groupOrder: [],
+        nodeOrders: {},
+        collapsed: {}
+    };
+}
+
+function normalizeState(state) {
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
+        return createEmptyState();
+    }
+    if (!Array.isArray(state.groupOrder)) {
+        state.groupOrder = [];
+    }
+    if (!state.nodeOrders || typeof state.nodeOrders !== "object") {
+        state.nodeOrders = {};
+    }
+    if (!state.collapsed || typeof state.collapsed !== "object") {
+        state.collapsed = {};
+    }
+    return state;
+}
 
 function loadOrderMap() {
     try {
@@ -34,16 +59,28 @@ function loadOrderMap() {
             return {};
         }
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object") {
-            return parsed;
+        if (!parsed || typeof parsed !== "object") {
+            return {};
         }
+        Object.keys(parsed).forEach((key) => {
+            if (Array.isArray(parsed[key])) {
+                parsed[key] = normalizeState({
+                    groupOrder: parsed[key],
+                    nodeOrders: { ungrouped: parsed[key] },
+                    collapsed: {}
+                });
+            } else {
+                parsed[key] = normalizeState(parsed[key]);
+            }
+        });
+        return parsed;
     } catch (error) {
         console.warn(`[${EXTENSION_NAME}] Unable to parse stored order`, error);
     }
     return {};
 }
 
-function persistOrderMap() {
+function persistWorkflowStates() {
     try {
         localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(workflowOrderCache));
     } catch (error) {
@@ -61,23 +98,70 @@ function computeWorkflowKey(nodes) {
         .join("|");
 }
 
-function getStoredOrder(key) {
+function getWorkflowState(key) {
     if (!key) {
-        return [];
+        return createEmptyState();
     }
-    const order = workflowOrderCache[key];
-    if (!Array.isArray(order)) {
-        return [];
+    if (!workflowOrderCache[key]) {
+        workflowOrderCache[key] = createEmptyState();
+        persistWorkflowStates();
     }
-    return order.map((value) => Number(value)).filter((value) => Number.isInteger(value));
+    return workflowOrderCache[key];
 }
 
-function setStoredOrder(key, order) {
-    if (!key) {
-        return;
+function ensureGroupOrder(key, availableSections) {
+    const state = getWorkflowState(key);
+    const current = state.groupOrder || [];
+    const filtered = current.filter((section) => availableSections.includes(section));
+    availableSections.forEach((section) => {
+        if (!filtered.includes(section)) {
+            filtered.push(section);
+        }
+    });
+    if (filtered.length !== current.length || filtered.some((id, index) => id !== current[index])) {
+        state.groupOrder = filtered;
+        persistWorkflowStates();
     }
-    workflowOrderCache[key] = order;
-    persistOrderMap();
+    return filtered;
+}
+
+function ensureNodeOrder(key, sectionId, nodeIds) {
+    const state = getWorkflowState(key);
+    const stored = Array.isArray(state.nodeOrders[sectionId]) ? state.nodeOrders[sectionId] : [];
+    const filtered = stored.filter((id) => nodeIds.includes(id));
+    nodeIds.forEach((id) => {
+        if (!filtered.includes(id)) {
+            filtered.push(id);
+        }
+    });
+    if (filtered.length !== stored.length || filtered.some((id, index) => id !== stored[index])) {
+        state.nodeOrders[sectionId] = filtered;
+        persistWorkflowStates();
+    }
+    return filtered;
+}
+
+function setGroupOrder(key, order) {
+    const state = getWorkflowState(key);
+    state.groupOrder = [...order];
+    persistWorkflowStates();
+}
+
+function setNodeOrder(key, sectionId, order) {
+    const state = getWorkflowState(key);
+    state.nodeOrders[sectionId] = [...order];
+    persistWorkflowStates();
+}
+
+function isGroupCollapsed(key, sectionId) {
+    const state = getWorkflowState(key);
+    return !!state.collapsed?.[sectionId];
+}
+
+function setGroupCollapsed(key, sectionId, collapsed) {
+    const state = getWorkflowState(key);
+    state.collapsed[sectionId] = collapsed;
+    persistWorkflowStates();
 }
 
 function ensureStyleTag() {
@@ -253,30 +337,54 @@ function renderWorkflow(force = false) {
 
     lastWorkflowSignature = signature;
     currentWorkflowKey = computeWorkflowKey(nodes);
-    const storedOrder = getStoredOrder(currentWorkflowKey);
 
-    const orderedNodes = [...nodes];
-    if (storedOrder.length) {
-        const orderIndex = new Map();
-        storedOrder.forEach((id, index) => {
-            orderIndex.set(id, index);
+    const graph = app.graph;
+    const graphGroups = graph?._groups ? [...graph._groups] : [];
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const groupedNodeIds = new Set();
+    const sections = [];
+
+    graphGroups.forEach((group) => {
+        if (typeof group.recomputeInsideNodes === "function") {
+            try {
+                group.recomputeInsideNodes();
+            } catch (error) {
+                console.warn(`[${EXTENSION_NAME}] Unable to recompute group nodes`, error);
+            }
+        }
+        const nodeIds = (group._nodes ?? [])
+            .map((node) => node.id)
+            .filter((id) => nodeById.has(id));
+        if (!nodeIds.length) {
+            return;
+        }
+        nodeIds.forEach((id) => groupedNodeIds.add(id));
+        sections.push({
+            id: `group:${group.id}`,
+            type: "group",
+            title: group.title || `Group ${group.id}`,
+            group,
+            nodeIds,
+            orderHint: group.pos?.[1] ?? group.boundingRect?.[1] ?? 0
         });
-        orderedNodes.sort((a, b) => {
-            const aIndex = orderIndex.has(a.id) ? orderIndex.get(a.id) : storedOrder.length + nodes.indexOf(a);
-            const bIndex = orderIndex.has(b.id) ? orderIndex.get(b.id) : storedOrder.length + nodes.indexOf(b);
-            return aIndex - bIndex;
+    });
+
+    const ungroupedIds = nodes
+        .map((node) => node.id)
+        .filter((id) => !groupedNodeIds.has(id));
+
+    if (ungroupedIds.length) {
+        sections.push({
+            id: "group:ungrouped",
+            type: "ungrouped",
+            title: "Ungrouped",
+            group: null,
+            nodeIds: ungroupedIds,
+            orderHint: Number.MAX_SAFE_INTEGER
         });
     }
 
-    const normalizedOrder = orderedNodes.map((node) => node.id);
-    const persistedOrder = getStoredOrder(currentWorkflowKey);
-    const orderChanged = normalizedOrder.length !== persistedOrder.length
-        || normalizedOrder.some((id, index) => persistedOrder[index] !== id);
-    if (orderChanged) {
-        setStoredOrder(currentWorkflowKey, normalizedOrder);
-    }
-
-    if (!orderedNodes.length) {
+    if (!sections.length) {
         listEl.innerHTML = `
             <div class="responsive-overlay__empty">
                 <p>Nothing to display yet. Build a workflow to see it here.</p>
@@ -287,75 +395,175 @@ function renderWorkflow(force = false) {
         return;
     }
 
+    const defaultSectionOrder = sections
+        .slice()
+        .sort((a, b) => a.orderHint - b.orderHint)
+        .map((section) => section.id);
+
+    const groupOrder = ensureGroupOrder(currentWorkflowKey, defaultSectionOrder);
+    const sectionMap = new Map(sections.map((section) => [section.id, section]));
+
     listEl.innerHTML = "";
 
-    const nodeIds = orderedNodes.map((node) => node.id);
-    if (selectedNodeId === null || !nodeIds.includes(selectedNodeId)) {
-        selectedNodeId = orderedNodes[0]?.id ?? null;
+    const availableNodeIds = new Set(nodes.map((node) => node.id));
+    if (selectedNodeId === null || !availableNodeIds.has(selectedNodeId)) {
+        const firstSectionId = groupOrder.find((id) => {
+            const section = sectionMap.get(id);
+            return section && section.nodeIds.length;
+        });
+        if (firstSectionId) {
+            const section = sectionMap.get(firstSectionId);
+            selectedNodeId = section?.nodeIds?.[0] ?? null;
+        }
     }
 
-    orderedNodes.forEach((node, index) => {
-        const display = mapNodeToDisplay(node);
-        const nodeId = node.id;
-
-        const item = $el("button", {
-            className: "responsive-overlay__node",
-            dataset: { nodeId: String(nodeId) },
-            draggable: true,
-            onclick: () => {
-                setSelectedNode(nodeId);
-                renderNodeDetails(node);
-            }
-        }, [
-            $el("div", { className: "responsive-overlay__node-head" }, [
-                $el("span", { className: "responsive-overlay__node-title" }, [display.title]),
-                $el("span", { className: "responsive-overlay__node-type" }, [display.type])
-            ]),
-            $el("div", { className: "responsive-overlay__node-meta" }, [
-                $el("span", {}, [`#${display.id}`]),
-                $el("span", {}, [
-                    `${display.inputCount} in`,
-                    " • ",
-                    `${display.outputCount} out`
-                ])
-            ])
-        ]);
-
-        item.addEventListener("dragstart", (event) => {
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData("text/plain", String(nodeId));
-            draggedNodeId = nodeId;
-        });
-        item.addEventListener("dragend", () => {
-            draggedNodeId = null;
-        });
-        item.addEventListener("dragover", (event) => {
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "move";
-            item.classList.add("responsive-overlay__node--dragover");
-        });
-        item.addEventListener("dragleave", () => {
-            item.classList.remove("responsive-overlay__node--dragover");
-        });
-        item.addEventListener("drop", (event) => {
-            event.preventDefault();
-            item.classList.remove("responsive-overlay__node--dragover");
-            if (draggedNodeId === null || draggedNodeId === nodeId) {
-                return;
-            }
-            reorderNodes(draggedNodeId, nodeId, orderedNodes.map((n) => n.id));
-        });
-
-        if (nodeId === selectedNodeId) {
-            item.classList.add(SELECTED_CLASS);
+    groupOrder.forEach((sectionId) => {
+        const section = sectionMap.get(sectionId);
+        if (!section) {
+            return;
         }
 
-        listEl.appendChild(item);
+        const nodeOrderIds = ensureNodeOrder(currentWorkflowKey, sectionId, section.nodeIds);
+        const nodesInSection = nodeOrderIds
+            .map((id) => nodeById.get(id))
+            .filter(Boolean);
+
+        const collapsed = isGroupCollapsed(currentWorkflowKey, sectionId);
+
+        const sectionEl = $el("div", {
+            className: "responsive-overlay__group",
+            dataset: { sectionId }
+        });
+
+        const toggleButton = $el("button", {
+            className: `responsive-overlay__group-toggle${collapsed ? " collapsed" : ""}`,
+            "aria-expanded": String(!collapsed),
+            "aria-label": `${collapsed ? "Expand" : "Collapse"} ${section.title}`.trim(),
+            onclick: (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const nextState = !isGroupCollapsed(currentWorkflowKey, sectionId);
+                setGroupCollapsed(currentWorkflowKey, sectionId, nextState);
+                scheduleOverlayRefresh(true);
+            }
+        }, [collapsed ? "►" : "▼"]);
+
+        const headerEl = $el("div", {
+            className: "responsive-overlay__group-header",
+            draggable: true
+        }, [
+            toggleButton,
+            $el("span", { className: "responsive-overlay__group-title" }, [section.title]),
+            $el("span", { className: "responsive-overlay__group-count" }, [`${nodesInSection.length}`])
+        ]);
+
+        headerEl.addEventListener("dragstart", (event) => {
+            draggedSectionId = sectionId;
+            draggedNodeId = null;
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", sectionId);
+        });
+        headerEl.addEventListener("dragend", () => {
+            draggedSectionId = null;
+        });
+
+        sectionEl.addEventListener("dragover", (event) => {
+            if (!draggedSectionId || draggedSectionId === sectionId) {
+                return;
+            }
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            sectionEl.classList.add("responsive-overlay__group--dragover");
+        });
+        sectionEl.addEventListener("dragleave", () => {
+            sectionEl.classList.remove("responsive-overlay__group--dragover");
+        });
+        sectionEl.addEventListener("drop", (event) => {
+            if (!draggedSectionId || draggedSectionId === sectionId) {
+                return;
+            }
+            event.preventDefault();
+            sectionEl.classList.remove("responsive-overlay__group--dragover");
+            reorderSections(draggedSectionId, sectionId);
+            draggedSectionId = null;
+        });
+
+        const itemsContainer = $el("div", {
+            className: `responsive-overlay__group-items${collapsed ? " responsive-overlay__group-items--collapsed" : ""}`
+        });
+
+        nodesInSection.forEach((node) => {
+            const display = mapNodeToDisplay(node);
+            const nodeId = node.id;
+            const button = $el("button", {
+                className: "responsive-overlay__node",
+                dataset: { nodeId: String(nodeId), sectionId },
+                draggable: !collapsed,
+                onclick: () => {
+                    setSelectedNode(nodeId);
+                    renderNodeDetails(node);
+                }
+            }, [
+                $el("div", { className: "responsive-overlay__node-head" }, [
+                    $el("span", { className: "responsive-overlay__node-title" }, [display.title]),
+                    $el("span", { className: "responsive-overlay__node-type" }, [display.type])
+                ]),
+                $el("div", { className: "responsive-overlay__node-meta" }, [
+                    $el("span", {}, [`#${display.id}`]),
+                    $el("span", {}, [
+                        `${display.inputCount} in`,
+                        " • ",
+                        `${display.outputCount} out`
+                    ])
+                ])
+            ]);
+
+            if (!collapsed) {
+                button.addEventListener("dragstart", (event) => {
+                    draggedNodeId = nodeId;
+                    draggedSectionId = null;
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", String(nodeId));
+                });
+                button.addEventListener("dragend", () => {
+                    draggedNodeId = null;
+                });
+                button.addEventListener("dragover", (event) => {
+                    if (draggedSectionId) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    button.classList.add("responsive-overlay__node--dragover");
+                });
+                button.addEventListener("dragleave", () => {
+                    button.classList.remove("responsive-overlay__node--dragover");
+                });
+                button.addEventListener("drop", (event) => {
+                    if (draggedSectionId) return;
+                    event.preventDefault();
+                    button.classList.remove("responsive-overlay__node--dragover");
+                    if (draggedNodeId === null || draggedNodeId === nodeId) {
+                        return;
+                    }
+                    reorderNodes(sectionId, draggedNodeId, nodeId, nodesInSection.map((n) => n.id));
+                    draggedNodeId = null;
+                });
+            }
+
+            if (nodeId === selectedNodeId) {
+                button.classList.add(SELECTED_CLASS);
+            }
+
+            itemsContainer.appendChild(button);
+        });
+
+        sectionEl.appendChild(headerEl);
+        sectionEl.appendChild(itemsContainer);
+        listEl.appendChild(sectionEl);
     });
 
-    const selected = orderedNodes.find((node) => node.id === selectedNodeId) ?? null;
-    if (selected) {
-        renderNodeDetails(selected);
+    const selectedNode = nodeById.get(selectedNodeId) ?? null;
+    if (selectedNode) {
+        renderNodeDetails(selectedNode);
         setSelectedNode(selectedNodeId);
     } else {
         renderNodeDetails(null);
@@ -481,20 +689,15 @@ function setSelectedNode(nodeId) {
     });
 }
 
-function reorderNodes(sourceId, targetId, currentOrder) {
-    if (!currentWorkflowKey) {
+function reorderNodes(sectionId, sourceId, targetId, sectionNodeIds) {
+    if (!currentWorkflowKey || !sectionId) {
         return;
     }
 
-    const order = currentOrder ? [...currentOrder] : getStoredOrder(currentWorkflowKey);
-    if (!order.length) {
-        order.push(...currentOrder);
-    }
-
-    const sourceIndex = order.indexOf(sourceId);
-    let workingOrder = order;
-    if (sourceIndex === -1) {
-        workingOrder = [...order, sourceId];
+    const baseOrder = ensureNodeOrder(currentWorkflowKey, sectionId, sectionNodeIds);
+    const workingOrder = baseOrder.filter((id) => sectionNodeIds.includes(id));
+    if (!workingOrder.includes(sourceId)) {
+        workingOrder.push(sourceId);
     }
 
     const withoutSource = workingOrder.filter((id) => id !== sourceId);
@@ -505,10 +708,34 @@ function reorderNodes(sourceId, targetId, currentOrder) {
         withoutSource.splice(targetIndex, 0, sourceId);
     }
 
-    setStoredOrder(currentWorkflowKey, withoutSource);
+    setNodeOrder(currentWorkflowKey, sectionId, withoutSource);
     draggedNodeId = null;
     renderWorkflow(true);
 }
+
+function reorderSections(sourceId, targetId) {
+    if (!currentWorkflowKey || !sourceId || !targetId || sourceId === targetId) {
+        return;
+    }
+
+    const state = getWorkflowState(currentWorkflowKey);
+    const order = Array.isArray(state.groupOrder) ? [...state.groupOrder] : [];
+    if (!order.includes(sourceId) || !order.includes(targetId)) {
+        return;
+    }
+
+    const withoutSource = order.filter((id) => id !== sourceId);
+    const targetIndex = withoutSource.indexOf(targetId);
+    if (targetIndex === -1) {
+        return;
+    }
+
+    withoutSource.splice(targetIndex, 0, sourceId);
+    setGroupOrder(currentWorkflowKey, withoutSource);
+    draggedSectionId = null;
+    renderWorkflow(true);
+}
+
 
 function updateWidgetValue(node, widget, value) {
     if (widget === undefined) {

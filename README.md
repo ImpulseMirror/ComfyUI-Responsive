@@ -6,7 +6,7 @@ ComfyUI-Responsive adds a toggleable, responsive control surface on top of Comfy
 
 - Persistent header toggle that sits next to other ComfyUI overlay icons (e.g. Manager) and can also be opened with `Alt + R`.
 - Full-screen responsive overlay that works on large monitors, tablets, and narrow displays.
-- Sidebar workflow outline that lists every node with its type, id, and connection counts, highlighting the active selection and supporting drag-to-reorder (per-workflow preferences persist between sessions).
+- Sidebar workflow outline mirrors ComfyUI groupings, with collapsible sections that list every node (type, id, in/out counts), highlight the active selection, and support drag-to-reorder within and across groups with per-workflow persistence.
 - Detail panel that groups the selected node’s widgets into tidy form controls (text areas, selects, sliders, checkboxes) and keeps values in sync with the node graph.
 - Built-in **Generate** button queues the current workflow directly from the overlay and keeps the newest renders in view.
 - Refresh button and automatic reload when workflows are opened through the ComfyUI API so the layout always reflects the latest graph.
@@ -24,7 +24,7 @@ On startup a new “Responsive” button with a dashboard icon will appear in th
 1. Open any workflow in ComfyUI.
 2. Click the **Responsive** toggle (or press `Alt + R`) to open the overlay.
 3. Select a node from the left sidebar to inspect or edit its widgets in the main panel; the selected entry stays highlighted for clarity.
-4. Drag workflow entries to curate the column order; changes are remembered for that workflow.
+4. Drag group headers or individual nodes to curate the column order; changes are remembered per workflow, and you can collapse groups for a simplified view.
 5. Adjust widget values as needed, then hit **Generate** to queue the workflow without leaving the overlay. The current render fills the right-hand column while the latest images/videos appear beneath it.
 6. Use the **Refresh** action if you add or reorder nodes while the overlay is visible.
 7. Click **Close** or press `Esc` to return to the traditional node canvas.
