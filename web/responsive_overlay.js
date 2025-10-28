@@ -8,11 +8,18 @@ const TOGGLE_ID = "responsive-overlay-toggle";
 const OVERLAY_ID = "responsive-overlay-root";
 const LIST_ID = "responsive-overlay-nodes";
 const DETAILS_ID = "responsive-overlay-details";
+const OUTPUTS_ID = "responsive-overlay-outputs";
+const RESULTS_GRID_ID = "responsive-overlay-results-grid";
 
 const ACTIVE_CLASS = "responsive-overlay-is-open";
 const SELECTED_CLASS = "responsive-overlay__node--selected";
 
 let selectedNodeId = null;
+let lastWorkflowSignature = "";
+let scheduledRefresh = false;
+let pendingRefreshForce = false;
+const MAX_OUTPUT_ITEMS = 16;
+const latestOutputs = [];
 
 function ensureStyleTag() {
     if (document.getElementById("responsive-overlay-styles")) {
@@ -119,7 +126,7 @@ function createOverlayRoot() {
                     }, ["Generate"]),
                     $el("button", {
                         className: "responsive-overlay__refresh",
-                        onclick: () => renderWorkflow()
+                        onclick: () => renderWorkflow(true)
                     }, ["Refresh"]),
                     $el("button", {
                         className: "responsive-overlay__close",
@@ -133,6 +140,13 @@ function createOverlayRoot() {
                     $el("section", { id: DETAILS_ID, className: "responsive-overlay__panel" }, [
                         $el("h3", {}, ["Node Details"]),
                         $el("p", { id: "responsive-overlay-placeholder" }, ["Select a node from the list to view and edit its widgets."])
+                    ]),
+                    $el("section", { id: OUTPUTS_ID, className: "responsive-overlay__panel responsive-overlay__results hidden" }, [
+                        $el("div", { className: "responsive-overlay__panel-header" }, [
+                            $el("h3", {}, ["Latest Results"]),
+                            $el("span", { className: "responsive-overlay__panel-subtitle", id: "responsive-overlay-results-meta" }, ["Run the workflow to see images or videos here."])
+                        ]),
+                        $el("div", { id: RESULTS_GRID_ID, className: "responsive-overlay__results-grid" }, [])
                     ])
                 ])
             ])
@@ -151,7 +165,7 @@ function getGraphNodes() {
     return graph._nodes ? [...graph._nodes] : [];
 }
 
-function renderWorkflow() {
+function renderWorkflow(force = false) {
     const nodes = getGraphNodes();
     const summaryEl = document.getElementById("responsive-overlay-summary");
     const listEl = document.getElementById(LIST_ID);
@@ -161,6 +175,14 @@ function renderWorkflow() {
     }
 
     summaryEl.textContent = summarizeWorkflow(nodes);
+    const signature = nodes.map((node) => `${node?.id ?? "?"}:${node?.type ?? "?"}`).join("|");
+    const unchanged = !force && signature === lastWorkflowSignature;
+
+    if (unchanged) {
+        return;
+    }
+
+    lastWorkflowSignature = signature;
 
     if (!nodes.length) {
         listEl.innerHTML = `
@@ -378,7 +400,8 @@ function setOverlayState(open) {
     toggle.classList.toggle("active", open);
 
     if (open) {
-        renderWorkflow();
+        renderWorkflow(true);
+        renderOutputs();
     }
 }
 
@@ -406,19 +429,30 @@ function triggerGenerate() {
     }
 }
 
-let scheduledRefresh = false;
-function scheduleOverlayRefresh() {
+function scheduleOverlayRefresh(force = false) {
     if (scheduledRefresh) {
+        pendingRefreshForce = pendingRefreshForce || force;
         return;
     }
     scheduledRefresh = true;
+    pendingRefreshForce = pendingRefreshForce || force;
     requestAnimationFrame(() => {
         scheduledRefresh = false;
         const root = document.getElementById(OVERLAY_ID);
-        if (root && !root.classList.contains("hidden")) {
-            renderWorkflow();
-            setSelectedNode(selectedNodeId);
+        if (!root || root.classList.contains("hidden")) {
+            pendingRefreshForce = false;
+            return;
         }
+
+        const activeElement = document.activeElement;
+        if (activeElement && root.contains(activeElement) && ["INPUT", "TEXTAREA", "SELECT"].includes(activeElement.tagName)) {
+            pendingRefreshForce = false;
+            return;
+        }
+
+        renderWorkflow(pendingRefreshForce);
+        setSelectedNode(selectedNodeId);
+        pendingRefreshForce = false;
     });
 }
 
@@ -447,31 +481,167 @@ app.registerExtension({
 
         window.addEventListener("keydown", handleKeyboardShortcuts);
 
-        const observer = new MutationObserver((mutations) => {
-            if (root.classList.contains("hidden")) {
-                return;
-            }
-
-            for (const mutation of mutations) {
-                const target = mutation.target;
-                if (!root.contains(target) && target !== root) {
-                    scheduleOverlayRefresh();
-                    break;
-                }
-            }
-        });
-
-        observer.observe(document.body, { childList: true, subtree: true });
-
+        const registeredHandlers = [];
         if (api?.addEventListener) {
-            api.addEventListener("workflowLoaded", () => {
-                scheduleOverlayRefresh();
-            });
+            const workflowHandler = () => scheduleOverlayRefresh(true);
+            const graphHandler = () => scheduleOverlayRefresh();
+            const executedHandler = (event) => {
+                handleExecutionOutput(event?.detail);
+            };
+
+            api.addEventListener("workflowLoaded", workflowHandler);
+            api.addEventListener("graphChanged", graphHandler);
+            api.addEventListener("executed", executedHandler);
+
+            registeredHandlers.push(["workflowLoaded", workflowHandler]);
+            registeredHandlers.push(["graphChanged", graphHandler]);
+            registeredHandlers.push(["executed", executedHandler]);
         }
 
         return () => {
-            observer.disconnect();
             window.removeEventListener("keydown", handleKeyboardShortcuts);
+            registeredHandlers.forEach(([name, handler]) => {
+                api?.removeEventListener?.(name, handler);
+            });
         };
     }
 });
+
+function handleExecutionOutput(detail) {
+    if (!detail || !detail.output) {
+        return;
+    }
+
+    const mediaItems = extractMediaFromOutput(detail.output);
+    if (!mediaItems.length) {
+        return;
+    }
+
+    mediaItems.forEach((item) => {
+        const key = item.url;
+        const existingIndex = latestOutputs.findIndex((entry) => entry.key === key);
+        if (existingIndex !== -1) {
+            latestOutputs.splice(existingIndex, 1);
+        }
+
+        latestOutputs.unshift({
+            ...item,
+            key,
+            node: detail.node,
+            promptId: detail.prompt_id,
+            timestamp: Date.now()
+        });
+    });
+
+    if (latestOutputs.length > MAX_OUTPUT_ITEMS) {
+        latestOutputs.length = MAX_OUTPUT_ITEMS;
+    }
+
+    renderOutputs();
+}
+
+function extractMediaFromOutput(output) {
+    const collected = [];
+
+    const visit = (value) => {
+        if (!value) {
+            return;
+        }
+        if (Array.isArray(value)) {
+            value.forEach(visit);
+            return;
+        }
+        if (typeof value === "object") {
+            if (value.filename || value.file_name) {
+                const filename = value.filename || value.file_name;
+                const subfolder = value.subfolder || value.sub_folder || value.folder || "";
+                const storageType = value.type || value.storage || "output";
+                const url = buildMediaUrl(filename, subfolder, storageType);
+                if (url) {
+                    const ext = filename.split(".").pop()?.toLowerCase() || "";
+                    const videoExts = ["mp4", "webm", "mov", "avi", "mkv"];
+                    const kind = videoExts.includes(ext) ? "video" : "image";
+                    collected.push({
+                        url,
+                        filename,
+                        subfolder,
+                        storageType,
+                        kind
+                    });
+                }
+                return;
+            }
+            Object.values(value).forEach(visit);
+        }
+    };
+
+    visit(output);
+    return collected;
+}
+
+function buildMediaUrl(filename, subfolder, storageType) {
+    if (!filename) {
+        return "";
+    }
+    const params = new URLSearchParams();
+    params.set("filename", filename);
+    params.set("type", storageType || "output");
+    if (subfolder) {
+        params.set("subfolder", subfolder);
+    }
+    params.set("preview", "1");
+    return `/api/view?${params.toString()}`;
+}
+
+function renderOutputs() {
+    const container = document.getElementById(OUTPUTS_ID);
+    const grid = document.getElementById(RESULTS_GRID_ID);
+    const meta = document.getElementById("responsive-overlay-results-meta");
+
+    if (!container || !grid || !meta) {
+        return;
+    }
+
+    if (!latestOutputs.length) {
+        container.classList.add("hidden");
+        grid.innerHTML = "";
+        meta.textContent = "Run the workflow to see images or videos here.";
+        return;
+    }
+
+    container.classList.remove("hidden");
+    grid.innerHTML = "";
+    meta.textContent = `Showing ${latestOutputs.length} recent file${latestOutputs.length > 1 ? "s" : ""}`;
+
+    latestOutputs.forEach((item) => {
+        const mediaElement = item.kind === "video"
+            ? $el("video", {
+                src: item.url,
+                controls: true,
+                loop: true,
+                playsInline: true,
+                preload: "metadata"
+            })
+            : $el("img", {
+                src: item.url,
+                loading: "lazy",
+                alt: item.filename
+            });
+
+        const figure = $el("figure", { className: "responsive-overlay__result" }, [
+            mediaElement,
+            $el("figcaption", {}, [
+                $el("span", { className: "responsive-overlay__result-name" }, [item.filename]),
+                typeof item.node !== "undefined"
+                    ? $el("span", { className: "responsive-overlay__result-node" }, [`Node #${item.node}`])
+                    : null
+            ].filter(Boolean))
+        ]);
+
+        figure.addEventListener("click", () => {
+            window.open(item.url, "_blank", "noopener");
+        });
+
+        grid.appendChild(figure);
+    });
+}

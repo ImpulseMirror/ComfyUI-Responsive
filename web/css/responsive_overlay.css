@@ -168,6 +168,60 @@
     gap: 18px;
 }
 
+.responsive-overlay__results {
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
+.responsive-overlay__results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+}
+
+.responsive-overlay__result {
+    margin: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(15, 23, 42, 0.35);
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.responsive-overlay__result:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.45);
+}
+
+.responsive-overlay__result img,
+.responsive-overlay__result video {
+    width: 100%;
+    display: block;
+    height: 140px;
+    object-fit: cover;
+    background: #111827;
+}
+
+.responsive-overlay__result figcaption {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+}
+
+.responsive-overlay__result-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.responsive-overlay__result-node {
+    opacity: 0.7;
+}
+
 .responsive-overlay__panel-header h3 {
     margin: 0;
     font-size: 18px;
