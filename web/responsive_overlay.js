@@ -14,14 +14,25 @@ function ensureStyleTag() {
         return;
     }
 
-    const baseUrl = typeof app.getWebExtensionUrl === "function"
-        ? app.getWebExtensionUrl(EXTENSION_NAME)
-        : `/extensions/${EXTENSION_NAME}`;
+    let cssHref;
+    try {
+        cssHref = new URL("./css/responsive_overlay.css", import.meta.url).href;
+    } catch (error) {
+        const baseUrl = typeof app.getWebExtensionUrl === "function"
+            ? app.getWebExtensionUrl(EXTENSION_NAME)
+            : `/extensions/${EXTENSION_NAME}`;
+
+        const normalisedBase = baseUrl
+            .replace(/\/[^/]+\.js$/, "")
+            .replace(/\/$/, "");
+
+        cssHref = `${normalisedBase}/css/responsive_overlay.css`;
+    }
 
     const linkEl = document.createElement("link");
     linkEl.id = "responsive-overlay-styles";
     linkEl.rel = "stylesheet";
-    linkEl.href = `${baseUrl}/css/responsive_overlay.css`;
+    linkEl.href = cssHref;
     document.head.appendChild(linkEl);
 }
 
