@@ -10,16 +10,75 @@ const LIST_ID = "responsive-overlay-nodes";
 const DETAILS_ID = "responsive-overlay-details";
 const OUTPUTS_ID = "responsive-overlay-outputs";
 const RESULTS_GRID_ID = "responsive-overlay-results-grid";
+const CURRENT_OUTPUT_ID = "responsive-overlay-current-output";
+const CURRENT_MEDIA_ID = "responsive-overlay-current-media";
 
 const ACTIVE_CLASS = "responsive-overlay-is-open";
 const SELECTED_CLASS = "responsive-overlay__node--selected";
+const ORDER_STORAGE_KEY = "comfyui-responsive.nodeOrder";
 
 let selectedNodeId = null;
 let lastWorkflowSignature = "";
+let currentWorkflowKey = "";
 let scheduledRefresh = false;
 let pendingRefreshForce = false;
+let draggedNodeId = null;
 const MAX_OUTPUT_ITEMS = 16;
 const latestOutputs = [];
+const workflowOrderCache = loadOrderMap();
+
+function loadOrderMap() {
+    try {
+        const raw = localStorage.getItem(ORDER_STORAGE_KEY);
+        if (!raw) {
+            return {};
+        }
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+            return parsed;
+        }
+    } catch (error) {
+        console.warn(`[${EXTENSION_NAME}] Unable to parse stored order`, error);
+    }
+    return {};
+}
+
+function persistOrderMap() {
+    try {
+        localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(workflowOrderCache));
+    } catch (error) {
+        console.warn(`[${EXTENSION_NAME}] Unable to persist order`, error);
+    }
+}
+
+function computeWorkflowKey(nodes) {
+    if (!Array.isArray(nodes) || !nodes.length) {
+        return "";
+    }
+    return nodes
+        .map((node) => `${node?.id ?? "?"}:${node?.type ?? "?"}`)
+        .sort()
+        .join("|");
+}
+
+function getStoredOrder(key) {
+    if (!key) {
+        return [];
+    }
+    const order = workflowOrderCache[key];
+    if (!Array.isArray(order)) {
+        return [];
+    }
+    return order.map((value) => Number(value)).filter((value) => Number.isInteger(value));
+}
+
+function setStoredOrder(key, order) {
+    if (!key) {
+        return;
+    }
+    workflowOrderCache[key] = order;
+    persistOrderMap();
+}
 
 function ensureStyleTag() {
     if (document.getElementById("responsive-overlay-styles")) {
@@ -140,6 +199,16 @@ function createOverlayRoot() {
                     $el("section", { id: DETAILS_ID, className: "responsive-overlay__panel" }, [
                         $el("h3", {}, ["Node Details"]),
                         $el("p", { id: "responsive-overlay-placeholder" }, ["Select a node from the list to view and edit its widgets."])
+                    ])
+                ]),
+                $el("div", { className: "responsive-overlay__output-column" }, [
+                    $el("section", { id: CURRENT_OUTPUT_ID, className: "responsive-overlay__panel responsive-overlay__current-output" }, [
+                        $el("div", { className: "responsive-overlay__panel-header" }, [
+                            $el("h3", {}, ["Current Output"])
+                        ]),
+                        $el("div", { id: CURRENT_MEDIA_ID, className: "responsive-overlay__current-media" }, [
+                            $el("p", { className: "responsive-overlay__empty" }, ["Generate to see the latest render here."])
+                        ])
                     ]),
                     $el("section", { id: OUTPUTS_ID, className: "responsive-overlay__panel responsive-overlay__results hidden" }, [
                         $el("div", { className: "responsive-overlay__panel-header" }, [
@@ -183,8 +252,31 @@ function renderWorkflow(force = false) {
     }
 
     lastWorkflowSignature = signature;
+    currentWorkflowKey = computeWorkflowKey(nodes);
+    const storedOrder = getStoredOrder(currentWorkflowKey);
 
-    if (!nodes.length) {
+    const orderedNodes = [...nodes];
+    if (storedOrder.length) {
+        const orderIndex = new Map();
+        storedOrder.forEach((id, index) => {
+            orderIndex.set(id, index);
+        });
+        orderedNodes.sort((a, b) => {
+            const aIndex = orderIndex.has(a.id) ? orderIndex.get(a.id) : storedOrder.length + nodes.indexOf(a);
+            const bIndex = orderIndex.has(b.id) ? orderIndex.get(b.id) : storedOrder.length + nodes.indexOf(b);
+            return aIndex - bIndex;
+        });
+    }
+
+    const normalizedOrder = orderedNodes.map((node) => node.id);
+    const persistedOrder = getStoredOrder(currentWorkflowKey);
+    const orderChanged = normalizedOrder.length !== persistedOrder.length
+        || normalizedOrder.some((id, index) => persistedOrder[index] !== id);
+    if (orderChanged) {
+        setStoredOrder(currentWorkflowKey, normalizedOrder);
+    }
+
+    if (!orderedNodes.length) {
         listEl.innerHTML = `
             <div class="responsive-overlay__empty">
                 <p>Nothing to display yet. Build a workflow to see it here.</p>
@@ -197,18 +289,19 @@ function renderWorkflow(force = false) {
 
     listEl.innerHTML = "";
 
-    const nodeIds = nodes.map((node) => node.id);
+    const nodeIds = orderedNodes.map((node) => node.id);
     if (selectedNodeId === null || !nodeIds.includes(selectedNodeId)) {
-        selectedNodeId = nodes[0]?.id ?? null;
+        selectedNodeId = orderedNodes[0]?.id ?? null;
     }
 
-    nodes.forEach((node) => {
+    orderedNodes.forEach((node, index) => {
         const display = mapNodeToDisplay(node);
         const nodeId = node.id;
 
         const item = $el("button", {
             className: "responsive-overlay__node",
             dataset: { nodeId: String(nodeId) },
+            draggable: true,
             onclick: () => {
                 setSelectedNode(nodeId);
                 renderNodeDetails(node);
@@ -228,6 +321,31 @@ function renderWorkflow(force = false) {
             ])
         ]);
 
+        item.addEventListener("dragstart", (event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", String(nodeId));
+            draggedNodeId = nodeId;
+        });
+        item.addEventListener("dragend", () => {
+            draggedNodeId = null;
+        });
+        item.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            item.classList.add("responsive-overlay__node--dragover");
+        });
+        item.addEventListener("dragleave", () => {
+            item.classList.remove("responsive-overlay__node--dragover");
+        });
+        item.addEventListener("drop", (event) => {
+            event.preventDefault();
+            item.classList.remove("responsive-overlay__node--dragover");
+            if (draggedNodeId === null || draggedNodeId === nodeId) {
+                return;
+            }
+            reorderNodes(draggedNodeId, nodeId, orderedNodes.map((n) => n.id));
+        });
+
         if (nodeId === selectedNodeId) {
             item.classList.add(SELECTED_CLASS);
         }
@@ -235,7 +353,7 @@ function renderWorkflow(force = false) {
         listEl.appendChild(item);
     });
 
-    const selected = nodes.find((node) => node.id === selectedNodeId) ?? null;
+    const selected = orderedNodes.find((node) => node.id === selectedNodeId) ?? null;
     if (selected) {
         renderNodeDetails(selected);
         setSelectedNode(selectedNodeId);
@@ -361,6 +479,35 @@ function setSelectedNode(nodeId) {
         const id = Number(button.dataset.nodeId);
         button.classList.toggle(SELECTED_CLASS, id === selectedNodeId);
     });
+}
+
+function reorderNodes(sourceId, targetId, currentOrder) {
+    if (!currentWorkflowKey) {
+        return;
+    }
+
+    const order = currentOrder ? [...currentOrder] : getStoredOrder(currentWorkflowKey);
+    if (!order.length) {
+        order.push(...currentOrder);
+    }
+
+    const sourceIndex = order.indexOf(sourceId);
+    let workingOrder = order;
+    if (sourceIndex === -1) {
+        workingOrder = [...order, sourceId];
+    }
+
+    const withoutSource = workingOrder.filter((id) => id !== sourceId);
+    const targetIndex = withoutSource.indexOf(targetId);
+    if (targetIndex === -1) {
+        withoutSource.push(sourceId);
+    } else {
+        withoutSource.splice(targetIndex, 0, sourceId);
+    }
+
+    setStoredOrder(currentWorkflowKey, withoutSource);
+    draggedNodeId = null;
+    renderWorkflow(true);
 }
 
 function updateWidgetValue(node, widget, value) {
@@ -606,12 +753,15 @@ function renderOutputs() {
         container.classList.add("hidden");
         grid.innerHTML = "";
         meta.textContent = "Run the workflow to see images or videos here.";
+        renderCurrentMedia(null);
         return;
     }
 
     container.classList.remove("hidden");
     grid.innerHTML = "";
     meta.textContent = `Showing ${latestOutputs.length} recent file${latestOutputs.length > 1 ? "s" : ""}`;
+
+    renderCurrentMedia(latestOutputs[0]);
 
     latestOutputs.forEach((item) => {
         const mediaElement = item.kind === "video"
@@ -644,4 +794,35 @@ function renderOutputs() {
 
         grid.appendChild(figure);
     });
+}
+
+function renderCurrentMedia(item) {
+    const container = document.getElementById(CURRENT_MEDIA_ID);
+    if (!container) {
+        return;
+    }
+
+    container.innerHTML = "";
+
+    if (!item) {
+        container.appendChild($el("p", { className: "responsive-overlay__empty" }, ["Generate to see the latest render here."]));
+        return;
+    }
+
+    const mediaElement = item.kind === "video"
+        ? $el("video", {
+            src: item.url,
+            controls: true,
+            autoplay: true,
+            loop: true,
+            playsInline: true,
+            preload: "metadata"
+        })
+        : $el("img", {
+            src: item.url,
+            loading: "eager",
+            alt: item.filename
+        });
+
+    container.appendChild(mediaElement);
 }

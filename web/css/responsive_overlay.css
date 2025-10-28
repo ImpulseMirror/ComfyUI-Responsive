@@ -21,15 +21,15 @@
 }
 
 .responsive-overlay__shell {
-    width: min(1100px, 96vw);
-    height: min(700px, 90vh);
+    width: 100vw;
+    height: 100vh;
     background: #1f1f24;
-    border-radius: 18px;
-    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
+    border-radius: 0;
+    box-shadow: none;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.04);
+    border: none;
 }
 
 .responsive-overlay__header {
@@ -97,7 +97,7 @@
 .responsive-overlay__body {
     flex: 1;
     display: grid;
-    grid-template-columns: minmax(280px, 320px) 1fr;
+    grid-template-columns: minmax(260px, 300px) minmax(360px, 1fr) minmax(320px, 28%);
     gap: 0;
     overflow: hidden;
 }
@@ -115,6 +115,7 @@
 .responsive-overlay__content {
     padding: 22px;
     overflow-y: auto;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .responsive-overlay__node {
@@ -140,6 +141,10 @@
     background: rgba(79, 70, 229, 0.35);
     border: 1px solid rgba(129, 140, 248, 0.65);
     box-shadow: 0 8px 20px rgba(88, 28, 135, 0.18);
+}
+
+.responsive-overlay__node--dragover {
+    outline: 2px dashed rgba(129, 140, 248, 0.6);
 }
 
 .responsive-overlay__node-head {
@@ -171,6 +176,38 @@
 .responsive-overlay__results {
     max-height: 40vh;
     overflow-y: auto;
+}
+
+.responsive-overlay__output-column {
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+}
+
+.responsive-overlay__current-output {
+    min-height: 45vh;
+}
+
+.responsive-overlay__current-media {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 260px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(15, 23, 42, 0.35);
+    overflow: hidden;
+    position: relative;
+}
+
+.responsive-overlay__current-media img,
+.responsive-overlay__current-media video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #0f172a;
 }
 
 .responsive-overlay__results-grid {
@@ -303,6 +340,7 @@ body.responsive-overlay-is-open {
 
     .responsive-overlay__body {
         grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
     }
 
     .responsive-overlay__sidebar {
@@ -313,6 +351,16 @@ body.responsive-overlay-is-open {
 
     .responsive-overlay__node {
         min-width: 220px;
+    }
+
+    .responsive-overlay__content {
+        order: 3;
+        border-right: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .responsive-overlay__output-column {
+        order: 1;
     }
 }
 
