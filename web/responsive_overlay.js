@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { $el } from "../../scripts/ui.js";
-import { summarizeWorkflow, mapNodeToDisplay, getWidgetDescriptor } from "../utils/responsive_overlay_utils.js";
+import { summarizeWorkflow, mapNodeToDisplay, getWidgetDescriptor } from "./utils/responsive_overlay_utils.js";
 
 const EXTENSION_NAME = "ComfyUI.ResponsiveOverlay";
 const TOGGLE_ID = "responsive-overlay-toggle";
@@ -131,7 +131,6 @@ function renderWorkflow() {
         return;
     }
 
-    summaryEl.textContent = `${nodes.length} node${nodes.length > 1 ? "s" : ""}`;
     listEl.innerHTML = "";
 
     nodes.forEach((node) => {
@@ -158,7 +157,6 @@ function renderWorkflow() {
         listEl.appendChild(item);
     });
 
-    // Automatically render the first node
     renderNodeDetails(nodes[0]);
 }
 
@@ -281,7 +279,6 @@ function updateWidgetValue(node, widget, value) {
         node.onWidgetChanged(widget, value);
     }
 
-    // Ensure graph redraws to reflect updates
     if (app?.graph?.setDirtyCanvas) {
         app.graph.setDirtyCanvas(true, true);
     } else if (node && typeof node.setDirtyCanvas === "function") {
