@@ -351,7 +351,14 @@ function createOverlayRoot() {
                     $el("span", { className: "responsive-overlay__progress-label", id: PROGRESS_TEXT_ID }, [])
                 ])
             ]),
-            $el("header", { className: "responsive-overlay__header" }, [
+                $el("div", { id: "responsive-overlay-lightbox", className: "responsive-overlay__lightbox hidden" }, [
+                $el("div", { className: "responsive-overlay__lightbox-content" }, [
+                    $el("button", { className: "responsive-overlay__lightbox-close", onclick: closeLightbox }, ["✕"]),
+                    $el("div", { id: "responsive-overlay-lightbox-media", className: "responsive-overlay__lightbox-media" }, []),
+                    $el("div", { id: "responsive-overlay-lightbox-meta", className: "responsive-overlay__lightbox-meta" }, [])
+                ])
+            ]),
+        $el("header", { className: "responsive-overlay__header" }, [
                 $el("div", { className: "responsive-overlay__header-group" }, [
                     $el("h2", {}, ["Workflow Overview"]),
                     $el("span", { className: "responsive-overlay__summary", id: "responsive-overlay-summary" }, ["No workflow loaded"])
@@ -886,6 +893,17 @@ function reorderSections(sourceId, targetId) {
     draggedSectionId = null;
     renderWorkflow(true);
 }
+
+function openLightbox(item) {
+    if (item) {
+        openLightboxMedia(item);
+    }
+}
+
+function closeLightbox() {
+    closeLightboxMedia();
+}
+
 
 
 function updateWidgetValue(node, widget, value) {

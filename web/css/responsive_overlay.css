@@ -470,6 +470,71 @@ body.responsive-overlay-is-open {
     overflow: hidden;
 }
 
+.responsive-overlay__lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    backdrop-filter: blur(6px);
+}
+
+.responsive-overlay__lightbox.hidden {
+    display: none;
+}
+
+.responsive-overlay__lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+}
+
+.responsive-overlay__lightbox-media {
+    max-width: 90vw;
+    max-height: 80vh;
+    border-radius: 18px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    background: #050505;
+}
+
+.responsive-overlay__lightbox-media img,
+.responsive-overlay__lightbox-media video {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 18px;
+}
+
+.responsive-overlay__lightbox-close {
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(15, 23, 42, 0.85);
+    color: #f8fafc;
+    font-size: 18px;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.35);
+}
+
+.responsive-overlay__lightbox-meta {
+    font-size: 13px;
+    color: #e2e8f0;
+    text-align: center;
+    max-width: 90vw;
+    word-break: break-word;
+}
+
 @media (max-width: 900px) {
     .responsive-overlay__shell {
         width: 100vw;

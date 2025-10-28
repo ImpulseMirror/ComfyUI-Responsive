@@ -68,9 +68,21 @@ export function renderOutputs() {
     renderCurrentMedia(latestOutputs[0]);
 
     latestOutputs.forEach((item) => {
-        const mediaElement = item.kind === "video"
-            ? createVideoElement(item.url, { controls: true, loop: true, playsInline: true, preload: "metadata" })
-            : createImageElement(item.url, item.filename, { loading: "lazy" });
+        const mediaElement = item.kind === 'video'
+            ? createVideoElement(item.url)
+            : createImageElement(item.url, item.filename, { loading: 'lazy' });
+        mediaElement.dataset.overlayMedia = '1';
+        mediaElement.dataset.overlayKind = item.kind;
+        mediaElement.dataset.overlayName = item.filename;
+        figure.dataset.mediaUrl = item.url;
+        figure.dataset.mediaKind = item.kind;
+        figure.dataset.mediaName = item.filename;
+        figure.dataset.mediaSubfolder = item.subfolder || '';
+        figure.dataset.mediaStorage = item.storageType || '';
+        mediaElement.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openLightbox(item);
+        });
 
         const figure = document.createElement("figure");
         figure.className = "responsive-overlay__result";
@@ -83,12 +95,50 @@ export function renderOutputs() {
         }
         figure.appendChild(caption);
 
-        figure.addEventListener("click", () => {
-            window.open(item.url, "_blank", "noopener");
+        figure.addEventListener("click", (event) => {
+            event.preventDefault();
+            openLightbox(item);
         });
 
         grid.appendChild(figure);
     });
+}
+
+export function openLightboxMedia(item) {
+    const lightbox = document.getElementById("responsive-overlay-lightbox");
+    const mediaContainer = document.getElementById("responsive-overlay-lightbox-media");
+    const meta = document.getElementById("responsive-overlay-lightbox-meta");
+    if (!lightbox || !mediaContainer || !meta) {
+        return;
+    }
+
+    mediaContainer.innerHTML = "";
+    meta.textContent = item.filename;
+
+    if (item.kind === "video") {
+        const video = document.createElement("video");
+        video.src = item.url;
+        video.controls = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.playsInline = true;
+        mediaContainer.appendChild(video);
+    } else {
+        const img = createImageElement(item.url, item.filename, { loading: "eager" });
+        mediaContainer.appendChild(img);
+    }
+
+    lightbox.classList.remove("hidden");
+}
+
+export function closeLightboxMedia() {
+    const lightbox = document.getElementById("responsive-overlay-lightbox");
+    const mediaContainer = document.getElementById("responsive-overlay-lightbox-media");
+    if (!lightbox || !mediaContainer) {
+        return;
+    }
+    mediaContainer.innerHTML = "";
+    lightbox.classList.add("hidden");
 }
 
 export function renderCurrentMedia(item) {
@@ -164,11 +214,8 @@ function buildMediaUrl(filename, subfolder, storageType) {
     return `/api/view?${params.toString()}`;
 }
 
-function createVideoElement(src, attributes) {
-    const video = document.createElement("video");
-    video.src = src;
-    Object.assign(video, attributes);
-    return video;
+function createVideoElement(src) {
+    return createImageElement(src, "Video preview", { loading: "lazy" });
 }
 
 function createImageElement(src, alt, attributes) {
