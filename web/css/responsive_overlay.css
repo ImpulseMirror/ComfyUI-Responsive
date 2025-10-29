@@ -30,6 +30,7 @@
     flex-direction: column;
     overflow: hidden;
     border: none;
+    position: relative;
 }
 
 .responsive-overlay__header {
@@ -87,6 +88,39 @@
 
 .responsive-overlay__progress.hidden {
     display: none;
+}
+
+.responsive-overlay__pull-indicator {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 6px);
+    left: 50%;
+    transform: translate(-50%, -150%);
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.65);
+    color: #e2e8f0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 2200;
+}
+
+.responsive-overlay__pull-indicator.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+.responsive-overlay__pull-indicator.is-ready {
+    background: rgba(129, 140, 248, 0.65);
+    color: #0f172a;
+}
+
+.responsive-overlay__pull-indicator.is-active {
+    background: linear-gradient(135deg, #22c55e, #4ade80);
+    color: #0f172a;
 }
 
 .responsive-overlay__progress-track {
