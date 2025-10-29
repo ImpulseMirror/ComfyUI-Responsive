@@ -1,5 +1,5 @@
-import { app } from "../../scripts/app.js";
-import { $el } from "../../scripts/ui.js";
+import { app } from "../../../scripts/app.js";
+import { $el } from "../../../scripts/ui.js";
 import {
     ACTIVE_CLASS,
     CURRENT_MEDIA_ID,
@@ -90,7 +90,7 @@ export async function buildToggleButton() {
     };
 
     try {
-        const { ComfyButton } = await import("../../scripts/ui/components/button.js");
+        const { ComfyButton } = await import("../../../scripts/ui/components/button.js");
         const comfyButton = new ComfyButton({
             tooltip: "Toggle responsive overlay",
             content: "Responsive",

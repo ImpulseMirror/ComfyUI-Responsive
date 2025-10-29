@@ -1,4 +1,4 @@
-import { app } from "../../scripts/app.js";
+import { app } from "../../../scripts/app.js";
 import {
     EXTENSION_NAME,
     PROGRESS_BAR_ID,
