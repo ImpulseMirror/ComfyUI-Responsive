@@ -37,6 +37,14 @@ const PROGRESS_TEXT_ID = "responsive-overlay-progress-text";
 
 const ACTIVE_CLASS = "responsive-overlay-is-open";
 const SELECTED_CLASS = "responsive-overlay__node--selected";
+const LAYOUT_STORAGE_KEY = `${EXTENSION_NAME}.layout.v1`;
+const MIN_REGION_RATIO = 0.18;
+const STACK_LAYOUT_BREAKPOINT = 1100;
+const DEFAULT_LAYOUT_SIZES = {
+    outputs: 0.36,
+    details: 0.32,
+    nodes: 0.32
+};
 
 let selectedNodeId = null;
 let lastWorkflowSignature = "";
@@ -48,6 +56,10 @@ let draggedSectionId = null;
 
 const nodeStatuses = new Map();
 const nodeTitleCache = new Map();
+let regionLayoutSizes = loadLayoutSizes();
+let layoutResizeListenerBound = false;
+normalizeLayoutSizes();
+
 const executionTracking = {
     active: false,
     promptId: null,
@@ -59,6 +71,219 @@ const executionTracking = {
     percent: 0,
     errorNodeId: null
 };
+
+function loadLayoutSizes() {
+    if (typeof window === "undefined") {
+        return { ...DEFAULT_LAYOUT_SIZES };
+    }
+    try {
+        const stored = window.localStorage?.getItem(LAYOUT_STORAGE_KEY);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            const normalized = { ...DEFAULT_LAYOUT_SIZES };
+            Object.keys(DEFAULT_LAYOUT_SIZES).forEach((key) => {
+                const value = Number(parsed?.[key]);
+                if (Number.isFinite(value) && value > 0) {
+                    normalized[key] = value;
+                }
+            });
+            return normalized;
+        }
+    } catch (error) {
+        console.warn(`[${EXTENSION_NAME}] Failed to load layout settings`, error);
+    }
+    return { ...DEFAULT_LAYOUT_SIZES };
+}
+
+function persistLayoutSizes() {
+    if (typeof window === "undefined") {
+        return;
+    }
+    try {
+        window.localStorage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(regionLayoutSizes));
+    } catch (error) {
+        console.warn(`[${EXTENSION_NAME}] Failed to persist layout settings`, error);
+    }
+}
+
+function normalizeLayoutSizes() {
+    const keys = Object.keys(DEFAULT_LAYOUT_SIZES);
+    let total = 0;
+    keys.forEach((key) => {
+        const value = Number(regionLayoutSizes?.[key]);
+        regionLayoutSizes[key] = Number.isFinite(value) && value > 0 ? value : DEFAULT_LAYOUT_SIZES[key];
+        total += regionLayoutSizes[key];
+    });
+    if (total <= 0) {
+        keys.forEach((key) => {
+            regionLayoutSizes[key] = DEFAULT_LAYOUT_SIZES[key];
+        });
+        total = keys.reduce((sum, key) => sum + regionLayoutSizes[key], 0);
+    }
+    keys.forEach((key) => {
+        regionLayoutSizes[key] = regionLayoutSizes[key] / total;
+    });
+
+    let deficit = 0;
+    keys.forEach((key) => {
+        if (regionLayoutSizes[key] < MIN_REGION_RATIO) {
+            deficit += MIN_REGION_RATIO - regionLayoutSizes[key];
+            regionLayoutSizes[key] = MIN_REGION_RATIO;
+        }
+    });
+
+    if (deficit > 0) {
+        const adjustableKeys = keys.filter((key) => regionLayoutSizes[key] > MIN_REGION_RATIO);
+        let pool = adjustableKeys.reduce((sum, key) => sum + (regionLayoutSizes[key] - MIN_REGION_RATIO), 0);
+        if (pool <= 0) {
+            keys.forEach((key) => {
+                regionLayoutSizes[key] = DEFAULT_LAYOUT_SIZES[key];
+            });
+            normalizeLayoutSizes();
+            return;
+        }
+        adjustableKeys.forEach((key) => {
+            const extra = regionLayoutSizes[key] - MIN_REGION_RATIO;
+            const reduction = (extra / pool) * deficit;
+            regionLayoutSizes[key] = Math.max(MIN_REGION_RATIO, regionLayoutSizes[key] - reduction);
+        });
+    }
+
+    const finalTotal = keys.reduce((sum, key) => sum + regionLayoutSizes[key], 0);
+    keys.forEach((key) => {
+        regionLayoutSizes[key] = regionLayoutSizes[key] / finalTotal;
+    });
+}
+
+function applyLayoutSizes(root = document.getElementById(OVERLAY_ID)) {
+    if (!root) {
+        return;
+    }
+    if (!isStackedLayout(root)) {
+        clearRegionFlexStyles(root);
+        return;
+    }
+    normalizeLayoutSizes();
+    const body = root.querySelector(".responsive-overlay__body");
+    if (!body) {
+        return;
+    }
+    Object.entries(regionLayoutSizes).forEach(([key, value]) => {
+        const region = body.querySelector(`[data-region="${key}"]`);
+        if (region) {
+            region.style.flexGrow = value;
+            region.style.flexBasis = `${(value * 100).toFixed(2)}%`;
+        }
+    });
+}
+
+function initializeLayoutResizers(root) {
+    if (!root || root.dataset.layoutInitialized === "true") {
+        return;
+    }
+    const body = root.querySelector(".responsive-overlay__body");
+    if (!body) {
+        return;
+    }
+
+    const handlePointerDown = (event) => {
+        if (typeof window === "undefined") {
+            return;
+        }
+        if (!isStackedLayout(root)) {
+            return;
+        }
+        const divider = event.currentTarget;
+        const prevKey = divider?.dataset?.prevRegion;
+        const nextKey = divider?.dataset?.nextRegion;
+        if (!prevKey || !nextKey) {
+            return;
+        }
+        const bodyRect = body.getBoundingClientRect();
+        const totalHeight = bodyRect.height;
+        if (totalHeight <= 0) {
+            return;
+        }
+
+        event.preventDefault();
+        divider.setPointerCapture?.(event.pointerId);
+        root.classList.add("responsive-overlay--resizing");
+
+        const prevRegion = body.querySelector(`[data-region="${prevKey}"]`);
+        const nextRegion = body.querySelector(`[data-region="${nextKey}"]`);
+        const prevRect = prevRegion?.getBoundingClientRect();
+        const nextRect = nextRegion?.getBoundingClientRect();
+        const prevHeightPx = Math.max(MIN_REGION_RATIO * totalHeight, prevRect?.height ?? (regionLayoutSizes[prevKey] * totalHeight));
+        const nextHeightPx = Math.max(MIN_REGION_RATIO * totalHeight, nextRect?.height ?? (regionLayoutSizes[nextKey] * totalHeight));
+        const combinedPx = prevHeightPx + nextHeightPx;
+        if (combinedPx <= MIN_REGION_RATIO * totalHeight * 2) {
+            return;
+        }
+
+        const startY = event.clientY;
+        const minPx = MIN_REGION_RATIO * totalHeight;
+
+        const onPointerMove = (moveEvent) => {
+            const deltaY = moveEvent.clientY - startY;
+            let newPrevPx = clamp(prevHeightPx + deltaY, minPx, combinedPx - minPx);
+            if (!Number.isFinite(newPrevPx)) {
+                return;
+            }
+            const newNextPx = combinedPx - newPrevPx;
+            regionLayoutSizes[prevKey] = newPrevPx / totalHeight;
+            regionLayoutSizes[nextKey] = newNextPx / totalHeight;
+            applyLayoutSizes(root);
+        };
+
+        const onPointerUp = () => {
+            divider.releasePointerCapture?.(event.pointerId);
+            root.classList.remove("responsive-overlay--resizing");
+            persistLayoutSizes();
+            window.removeEventListener("pointermove", onPointerMove);
+            window.removeEventListener("pointerup", onPointerUp);
+        };
+
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp, { once: true });
+    };
+
+    body.querySelectorAll(".responsive-overlay__divider").forEach((divider) => {
+        divider.addEventListener("pointerdown", handlePointerDown, { passive: false });
+    });
+
+    root.dataset.layoutInitialized = "true";
+
+    if (!layoutResizeListenerBound && typeof window !== "undefined") {
+        window.addEventListener("resize", () => applyLayoutSizes());
+        layoutResizeListenerBound = true;
+    }
+}
+
+function clamp(value, min, max) {
+    if (!Number.isFinite(value)) {
+        return min;
+    }
+    return Math.max(min, Math.min(max, value));
+}
+
+function isStackedLayout(root = document.getElementById(OVERLAY_ID)) {
+    if (typeof window === "undefined") {
+        return true;
+    }
+    const width = root?.offsetWidth || window.innerWidth;
+    return width < STACK_LAYOUT_BREAKPOINT;
+}
+
+function clearRegionFlexStyles(root) {
+    const body = root.querySelector(".responsive-overlay__body");
+    if (!body) {
+        return;
+    }
+    body.querySelectorAll(".responsive-overlay__region").forEach((region) => {
+        region.style.removeProperty("flex-grow");
+        region.style.removeProperty("flex-basis");
+    });
+}
 
 function normalizeNodeId(value) {
     if (value === undefined || value === null) {
@@ -397,28 +622,46 @@ function createOverlayRoot() {
                 ])
             ]),
             $el("div", { className: "responsive-overlay__body" }, [
-                $el("aside", { className: "responsive-overlay__sidebar", id: LIST_ID }, []),
-                $el("main", { className: "responsive-overlay__content" }, [
-                    $el("section", { id: DETAILS_ID, className: "responsive-overlay__panel" }, [
-                        $el("h3", {}, ["Node Details"]),
-                        $el("p", { id: "responsive-overlay-placeholder" }, ["Select a node from the list to view and edit its widgets."])
+                $el("section", { className: "responsive-overlay__region responsive-overlay__region--outputs", dataset: { region: "outputs" } }, [
+                    $el("div", { className: "responsive-overlay__region-content" }, [
+                        $el("div", { className: "responsive-overlay__output-column" }, [
+                            $el("section", { id: CURRENT_OUTPUT_ID, className: "responsive-overlay__panel responsive-overlay__current-output" }, [
+                                $el("div", { className: "responsive-overlay__panel-header" }, [
+                                    $el("h3", {}, ["Current Output"])
+                                ]),
+                                $el("div", { id: CURRENT_MEDIA_ID, className: "responsive-overlay__current-media" }, [
+                                    $el("p", { className: "responsive-overlay__empty" }, ["Generate to see the latest render here."])
+                                ])
+                            ]),
+                            $el("section", { id: OUTPUTS_ID, className: "responsive-overlay__panel responsive-overlay__results hidden" }, [
+                                $el("div", { className: "responsive-overlay__panel-header" }, [
+                                    $el("h3", {}, ["Latest Results"]),
+                                    $el("span", { className: "responsive-overlay__panel-subtitle", id: "responsive-overlay-results-meta" }, ["Run the workflow to see images or videos here."])
+                                ]),
+                                $el("div", { id: RESULTS_GRID_ID, className: "responsive-overlay__results-grid" }, [])
+                            ])
+                        ])
                     ])
                 ]),
-                $el("div", { className: "responsive-overlay__output-column" }, [
-                    $el("section", { id: CURRENT_OUTPUT_ID, className: "responsive-overlay__panel responsive-overlay__current-output" }, [
-                        $el("div", { className: "responsive-overlay__panel-header" }, [
-                            $el("h3", {}, ["Current Output"])
-                        ]),
-                        $el("div", { id: CURRENT_MEDIA_ID, className: "responsive-overlay__current-media" }, [
-                            $el("p", { className: "responsive-overlay__empty" }, ["Generate to see the latest render here."])
+                $el("div", { className: "responsive-overlay__divider", dataset: { prevRegion: "outputs", nextRegion: "details" } }, [
+                    $el("span", { className: "responsive-overlay__divider-handle" })
+                ]),
+                $el("section", { className: "responsive-overlay__region responsive-overlay__region--details", dataset: { region: "details" } }, [
+                    $el("div", { className: "responsive-overlay__region-content" }, [
+                        $el("main", { className: "responsive-overlay__content" }, [
+                            $el("section", { id: DETAILS_ID, className: "responsive-overlay__panel" }, [
+                                $el("h3", {}, ["Node Details"]),
+                                $el("p", { id: "responsive-overlay-placeholder" }, ["Select a node from the list to view and edit its widgets."])
+                            ])
                         ])
-                    ]),
-                    $el("section", { id: OUTPUTS_ID, className: "responsive-overlay__panel responsive-overlay__results hidden" }, [
-                        $el("div", { className: "responsive-overlay__panel-header" }, [
-                            $el("h3", {}, ["Latest Results"]),
-                            $el("span", { className: "responsive-overlay__panel-subtitle", id: "responsive-overlay-results-meta" }, ["Run the workflow to see images or videos here."])
-                        ]),
-                        $el("div", { id: RESULTS_GRID_ID, className: "responsive-overlay__results-grid" }, [])
+                    ])
+                ]),
+                $el("div", { className: "responsive-overlay__divider", dataset: { prevRegion: "details", nextRegion: "nodes" } }, [
+                    $el("span", { className: "responsive-overlay__divider-handle" })
+                ]),
+                $el("section", { className: "responsive-overlay__region responsive-overlay__region--nodes", dataset: { region: "nodes" } }, [
+                    $el("div", { className: "responsive-overlay__region-content" }, [
+                        $el("aside", { className: "responsive-overlay__sidebar", id: LIST_ID }, [])
                     ])
                 ])
             ])
@@ -426,6 +669,8 @@ function createOverlayRoot() {
     ]);
 
     document.body.appendChild(root);
+    initializeLayoutResizers(root);
+    applyLayoutSizes(root);
     return root;
 }
 
@@ -1140,6 +1385,7 @@ function setOverlayState(open) {
     toggle.classList.toggle("active", open);
 
     if (open) {
+        applyLayoutSizes(root);
         renderWorkflow(true);
         renderOutputs();
     }

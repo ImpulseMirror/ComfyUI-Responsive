@@ -136,20 +136,77 @@
 
 .responsive-overlay__body {
     flex: 1;
-    display: grid;
-    grid-template-columns: minmax(260px, 300px) minmax(360px, 1fr) minmax(320px, 28%);
+    display: flex;
+    flex-direction: column;
     gap: 0;
     overflow: hidden;
+}
+
+.responsive-overlay__region {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.responsive-overlay__region-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.responsive-overlay__region--outputs .responsive-overlay__region-content,
+.responsive-overlay__region--details .responsive-overlay__region-content,
+.responsive-overlay__region--nodes .responsive-overlay__region-content {
+    padding: 0;
+}
+
+.responsive-overlay__divider {
+    flex: 0 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: row-resize;
+    user-select: none;
+    background: transparent;
+}
+
+.responsive-overlay__divider-handle {
+    display: block;
+    width: 120px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    transition: background 0.2s ease;
+}
+
+.responsive-overlay__divider:hover .responsive-overlay__divider-handle,
+.responsive-overlay--resizing .responsive-overlay__divider-handle {
+    background: rgba(129, 140, 248, 0.55);
+}
+
+.responsive-overlay--resizing {
+    cursor: row-resize;
+    user-select: none;
+}
+
+.responsive-overlay--resizing * {
+    cursor: row-resize !important;
 }
 
 .responsive-overlay__sidebar {
     background: rgba(255, 255, 255, 0.03);
     padding: 18px 16px;
     overflow-y: auto;
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1;
 }
 
 .responsive-overlay__group {
@@ -227,7 +284,8 @@
 .responsive-overlay__content {
     padding: 22px;
     overflow-y: auto;
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    border-right: none;
+    flex: 1;
 }
 
 .responsive-overlay__node {
@@ -313,7 +371,7 @@
 }
 
 .responsive-overlay__results {
-    max-height: 40vh;
+    flex: 1 1 220px;
     overflow-y: auto;
 }
 
@@ -323,13 +381,15 @@
     flex-direction: column;
     gap: 20px;
     overflow-y: auto;
+    flex: 1;
 }
 
 .responsive-overlay__current-output {
-    min-height: 45vh;
+    min-height: 260px;
     display: flex;
     flex-direction: column;
     gap: 18px;
+    flex: 1 1 auto;
 }
 
 .responsive-overlay__preview-video {
@@ -359,12 +419,12 @@
     align-items: center;
     justify-content: center;
     min-height: 260px;
-    max-height: calc(100vh - 240px);
     border-radius: 14px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(15, 23, 42, 0.35);
     overflow: hidden;
     position: relative;
+    flex: 1 1 auto;
 }
 
 .responsive-overlay__current-media img,
@@ -708,13 +768,11 @@ body.responsive-overlay-is-open {
         border-radius: 0;
     }
 
-    .responsive-overlay__body {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto auto auto;
+    .responsive-overlay__region {
+        min-height: 140px;
     }
 
     .responsive-overlay__sidebar {
-        order: 2;
         flex-direction: row;
         overflow-x: auto;
     }
@@ -723,18 +781,50 @@ body.responsive-overlay-is-open {
         min-width: 220px;
     }
 
-    .responsive-overlay__content {
-        order: 3;
-        border-right: none;
-        border-top: 1px solid rgba(255, 255, 255, 0.06);
-    }
-
-    .responsive-overlay__output-column {
-        order: 1;
-    }
-
     .responsive-overlay__current-media {
         max-height: 60vh;
+    }
+}
+
+@media (min-width: 1100px) {
+    .responsive-overlay__body {
+        display: grid;
+        grid-template-columns: minmax(260px, 300px) minmax(360px, 1fr) minmax(320px, 28%);
+        grid-template-areas: "nodes details outputs";
+    }
+
+    .responsive-overlay__region {
+        min-height: auto;
+        height: 100%;
+    }
+
+    .responsive-overlay__region-content {
+        height: 100%;
+    }
+
+    .responsive-overlay__region--nodes {
+        grid-area: nodes;
+    }
+
+    .responsive-overlay__region--details {
+        grid-area: details;
+    }
+
+    .responsive-overlay__region--outputs {
+        grid-area: outputs;
+    }
+
+    .responsive-overlay__divider {
+        display: none;
+    }
+
+    .responsive-overlay__sidebar {
+        border-top: none;
+        border-right: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .responsive-overlay__content {
+        border-right: 1px solid rgba(255, 255, 255, 0.06);
     }
 }
 
