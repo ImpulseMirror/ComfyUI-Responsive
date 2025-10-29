@@ -1,6 +1,6 @@
-import { app } from "../../../scripts/app.js";
-import { api } from "../../../scripts/api.js";
-import { $el } from "../../../scripts/ui.js";
+import { app } from "../../scripts/app.js";
+import { api } from "../../scripts/api.js";
+import { $el } from "../../scripts/ui.js";
 import { summarizeWorkflow, mapNodeToDisplay, getWidgetDescriptor } from "../utils/responsive_overlay_utils.js";
 import {
     computeWorkflowKey,
