@@ -6,7 +6,9 @@ function createEmptyState() {
     return {
         groupOrder: [],
         nodeOrders: {},
-        collapsed: {}
+        collapsed: {},
+        hiddenGroups: {},
+        hiddenNodes: {}
     };
 }
 
@@ -22,6 +24,12 @@ function normalizeState(state) {
     }
     if (!state.collapsed || typeof state.collapsed !== "object") {
         state.collapsed = {};
+    }
+    if (!state.hiddenGroups || typeof state.hiddenGroups !== "object") {
+        state.hiddenGroups = {};
+    }
+    if (!state.hiddenNodes || typeof state.hiddenNodes !== "object") {
+        state.hiddenNodes = {};
     }
     return state;
 }
@@ -135,6 +143,43 @@ export function isGroupCollapsed(key, sectionId) {
 export function setGroupCollapsed(key, sectionId, collapsed) {
     const state = getWorkflowState(key);
     state.collapsed[sectionId] = collapsed;
+    persistWorkflowStates();
+}
+
+export function isGroupHidden(key, sectionId) {
+    const state = getWorkflowState(key);
+    return !!state.hiddenGroups?.[sectionId];
+}
+
+export function setGroupHidden(key, sectionId, hidden) {
+    const state = getWorkflowState(key);
+    if (!state.hiddenGroups) {
+        state.hiddenGroups = {};
+    }
+    if (hidden) {
+        state.hiddenGroups[sectionId] = true;
+    } else {
+        delete state.hiddenGroups[sectionId];
+    }
+    persistWorkflowStates();
+}
+
+export function isNodeHidden(key, nodeId) {
+    const state = getWorkflowState(key);
+    return !!state.hiddenNodes?.[String(nodeId)];
+}
+
+export function setNodeHidden(key, nodeId, hidden) {
+    const state = getWorkflowState(key);
+    if (!state.hiddenNodes) {
+        state.hiddenNodes = {};
+    }
+    const id = String(nodeId);
+    if (hidden) {
+        state.hiddenNodes[id] = true;
+    } else {
+        delete state.hiddenNodes[id];
+    }
     persistWorkflowStates();
 }
 

@@ -10,7 +10,11 @@ import {
     setNodeOrder,
     isGroupCollapsed,
     setGroupCollapsed,
-    getWorkflowState
+    getWorkflowState,
+    isGroupHidden,
+    setGroupHidden,
+    isNodeHidden,
+    setNodeHidden
 } from "./utils/responsive_overlay_storage.js";
 import {
     configureMediaTargets,
@@ -31,6 +35,7 @@ const OUTPUTS_ID = "responsive-overlay-outputs";
 const RESULTS_GRID_ID = "responsive-overlay-results-grid";
 const CURRENT_OUTPUT_ID = "responsive-overlay-current-output";
 const CURRENT_MEDIA_ID = "responsive-overlay-current-media";
+const HIDDEN_TOGGLE_ID = "responsive-overlay-hidden-toggle";
 const PROGRESS_BAR_ID = "responsive-overlay-progress";
 const PROGRESS_FILL_ID = "responsive-overlay-progress-fill";
 const PROGRESS_TEXT_ID = "responsive-overlay-progress-text";
@@ -60,6 +65,7 @@ let regionLayoutSizes = loadLayoutSizes();
 let layoutResizeListenerBound = false;
 let isLayoutDragging = false;
 let focusScrollListenerBound = false;
+let showHiddenItems = false;
 normalizeLayoutSizes();
 
 const executionTracking = {
@@ -314,6 +320,49 @@ function clearRegionFlexStyles(root) {
         region.style.removeProperty("flex-grow");
         region.style.removeProperty("flex-basis");
     });
+}
+
+function toggleHiddenFilter() {
+    showHiddenItems = !showHiddenItems;
+    updateHiddenToggleButton();
+    renderWorkflow(true);
+}
+
+function updateHiddenToggleButton() {
+    const button = document.getElementById(HIDDEN_TOGGLE_ID);
+    if (!button) {
+        return;
+    }
+    if (showHiddenItems) {
+        button.textContent = "Hide Hidden";
+        button.classList.add("responsive-overlay__filter--active");
+    } else {
+        button.textContent = "Show Hidden";
+        button.classList.remove("responsive-overlay__filter--active");
+    }
+    button.setAttribute("aria-pressed", String(showHiddenItems));
+}
+
+function toggleNodeVisibility(nodeId, hidden) {
+    if (!currentWorkflowKey) {
+        currentWorkflowKey = computeWorkflowKey(getGraphNodes());
+    }
+    setNodeHidden(currentWorkflowKey, nodeId, hidden);
+    if (hidden && !showHiddenItems && selectedNodeId === nodeId) {
+        selectedNodeId = null;
+    }
+    renderWorkflow(true);
+}
+
+function toggleGroupVisibility(sectionId, hidden) {
+    if (!currentWorkflowKey) {
+        currentWorkflowKey = computeWorkflowKey(getGraphNodes());
+    }
+    setGroupHidden(currentWorkflowKey, sectionId, hidden);
+    if (hidden && !showHiddenItems) {
+        selectedNodeId = null;
+    }
+    renderWorkflow(true);
 }
 
 function setupFocusScrollHandling(root) {
@@ -711,6 +760,15 @@ function createOverlayRoot() {
                 ]),
                 $el("div", { className: "responsive-overlay__header-actions" }, [
                     $el("button", {
+                        id: HIDDEN_TOGGLE_ID,
+                        className: "responsive-overlay__filter",
+                        "aria-pressed": "false",
+                        onclick: (event) => {
+                            event.preventDefault();
+                            toggleHiddenFilter();
+                        }
+                    }, ["Show Hidden"]),
+                    $el("button", {
                         className: "responsive-overlay__generate",
                         onclick: () => triggerGenerate()
                     }, ["Generate"]),
@@ -775,6 +833,7 @@ function createOverlayRoot() {
     initializeLayoutResizers(root);
     setupFocusScrollHandling(root);
     applyLayoutSizes(root);
+    updateHiddenToggleButton();
     return root;
 }
 
@@ -794,6 +853,8 @@ function renderWorkflow(force = false) {
     if (!summaryEl || !listEl) {
         return;
     }
+
+    updateHiddenToggleButton();
 
     summaryEl.textContent = summarizeWorkflow(nodes);
     const signature = nodes.map((node) => `${node?.id ?? "?"}:${node?.type ?? "?"}`).join("|");
@@ -881,17 +942,23 @@ function renderWorkflow(force = false) {
 
     listEl.innerHTML = "";
 
-    const availableNodeIds = new Set(nodes.map((node) => node.id));
-    if (selectedNodeId === null || !availableNodeIds.has(selectedNodeId)) {
-        const firstSectionId = groupOrder.find((id) => {
-            const section = sectionMap.get(id);
-            return section && section.nodeIds.length;
-        });
-        if (firstSectionId) {
-            const section = sectionMap.get(firstSectionId);
-            selectedNodeId = section?.nodeIds?.[0] ?? null;
-        }
+    const hiddenNodesMap = new Map();
+    nodes.forEach((node) => {
+        hiddenNodesMap.set(node.id, isNodeHidden(currentWorkflowKey, node.id));
+    });
+
+    const availableNodeIds = new Set(
+        nodes
+            .filter((node) => showHiddenItems || !hiddenNodesMap.get(node.id))
+            .map((node) => node.id)
+    );
+
+    if (selectedNodeId !== null && !availableNodeIds.has(selectedNodeId)) {
+        selectedNodeId = null;
     }
+
+    let firstVisibleNodeId = null;
+    let renderedAnySection = false;
 
     groupOrder.forEach((sectionId) => {
         const section = sectionMap.get(sectionId);
@@ -899,10 +966,29 @@ function renderWorkflow(force = false) {
             return;
         }
 
-        const nodesInSection = (section.type === "group"
+        const nodesOrdered = (section.type === "group"
             ? ensureNodeOrder(currentWorkflowKey, sectionId, section.nodeIds)
             : section.nodeIds
         ).map((id) => nodeById.get(id)).filter(Boolean);
+
+        const groupHidden = section.type === "group" ? isGroupHidden(currentWorkflowKey, sectionId) : false;
+
+        if (!showHiddenItems && groupHidden) {
+            if (section.nodeIds.includes(selectedNodeId)) {
+                selectedNodeId = null;
+            }
+            return;
+        }
+
+        const visibleNodes = nodesOrdered.filter((node) => !hiddenNodesMap.get(node.id));
+        const nodesToRender = showHiddenItems ? nodesOrdered : visibleNodes;
+
+        if (!nodesToRender.length) {
+            if (section.nodeIds.includes(selectedNodeId)) {
+                selectedNodeId = null;
+            }
+            return;
+        }
 
         const collapsed = section.type === "group" ? isGroupCollapsed(currentWorkflowKey, sectionId) : false;
 
@@ -910,10 +996,13 @@ function renderWorkflow(force = false) {
         if (section.type === "single") {
             sectionClasses.push("responsive-overlay__group--single");
         }
+        if (groupHidden && showHiddenItems) {
+            sectionClasses.push("responsive-overlay__group--hidden");
+        }
 
         const sectionEl = $el("div", {
             className: sectionClasses.join(" "),
-            dataset: { sectionId }
+            dataset: { sectionId, hidden: groupHidden ? "true" : "false" }
         });
 
         const enableSectionDrop = (target) => {
@@ -961,7 +1050,25 @@ function renderWorkflow(force = false) {
             }, [
                 toggleButton,
                 $el("span", { className: "responsive-overlay__group-title" }, [section.title]),
-                $el("span", { className: "responsive-overlay__group-count" }, [`${nodesInSection.length}`])
+                $el("div", { className: "responsive-overlay__group-header-tools" }, [
+                    $el("span", { className: "responsive-overlay__group-count" }, [
+                        showHiddenItems && visibleNodes.length !== nodesOrdered.length
+                            ? `${visibleNodes.length}/${nodesOrdered.length}`
+                            : `${visibleNodes.length}`
+                    ]),
+                    groupHidden && showHiddenItems
+                        ? $el("span", { className: "responsive-overlay__group-hidden-indicator" }, ["Hidden"])
+                        : null,
+                    $el("button", {
+                        className: "responsive-overlay__visibility responsive-overlay__visibility--group",
+                        title: groupHidden ? "Show group" : "Hide group",
+                        onclick: (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            toggleGroupVisibility(sectionId, !groupHidden);
+                        }
+                    }, [groupHidden ? "👁‍🗨" : "👁"])
+                ].filter(Boolean))
             ]);
 
             headerEl.addEventListener("dragstart", (event) => {
@@ -986,9 +1093,10 @@ function renderWorkflow(force = false) {
             enableSectionDrop(sectionEl);
         }
 
-        nodesInSection.forEach((node) => {
+        nodesToRender.forEach((node) => {
             const display = mapNodeToDisplay(node);
             const nodeId = node.id;
+            const nodeHidden = !!hiddenNodesMap.get(nodeId);
             setNodeTitleCache(nodeId, display.title || display.type);
             const button = $el("button", {
                 className: "responsive-overlay__node",
@@ -1074,6 +1182,33 @@ function renderWorkflow(force = false) {
                 });
             }
 
+            if (nodeHidden) {
+                button.classList.add("responsive-overlay__node--hidden");
+                button.dataset.hidden = "true";
+            }
+
+            const visibilityToggle = $el("span", {
+                className: "responsive-overlay__visibility responsive-overlay__visibility--node",
+                role: "button",
+                tabIndex: 0,
+                title: nodeHidden ? "Show node" : "Hide node"
+            }, [nodeHidden ? "👁‍🗨" : "👁"]);
+
+            const handleToggle = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                toggleNodeVisibility(nodeId, !nodeHidden);
+            };
+
+            visibilityToggle.addEventListener("click", handleToggle);
+            visibilityToggle.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    handleToggle(event);
+                }
+            });
+
+            button.appendChild(visibilityToggle);
+
             if (nodeId === selectedNodeId) {
                 button.classList.add(SELECTED_CLASS);
             }
@@ -1081,10 +1216,26 @@ function renderWorkflow(force = false) {
             applyStatusClasses(button, nodeStatuses.get(String(nodeId)) || { state: executionTracking.active ? "pending" : "idle", progress: null });
 
             itemsContainer.appendChild(button);
+            if (!firstVisibleNodeId && (!nodeHidden || showHiddenItems)) {
+                firstVisibleNodeId = nodeId;
+            }
         });
 
         listEl.appendChild(sectionEl);
+        renderedAnySection = true;
     });
+
+    if (!renderedAnySection) {
+        listEl.innerHTML = `
+            <div class="responsive-overlay__empty">
+                <p>No visible nodes. Toggle "Show Hidden" to manage hidden items.</p>
+            </div>
+        `;
+    }
+
+    if (!selectedNodeId) {
+        selectedNodeId = firstVisibleNodeId ?? null;
+    }
 
     const selectedNode = nodeById.get(selectedNodeId) ?? null;
     if (selectedNode) {
@@ -1489,6 +1640,7 @@ function setOverlayState(open) {
     toggle.classList.toggle("active", open);
 
     if (open) {
+        updateHiddenToggleButton();
         applyLayoutSizes(root);
         renderWorkflow(true);
         renderOutputs();
