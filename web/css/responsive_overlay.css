@@ -31,6 +31,7 @@
     overflow: hidden;
     border: none;
     position: relative;
+    padding-top: env(safe-area-inset-top, 0px);
 }
 
 .responsive-overlay__header {
@@ -240,6 +241,10 @@
 .responsive-overlay__region--details .responsive-overlay__region-content,
 .responsive-overlay__region--nodes .responsive-overlay__region-content {
     padding: 0;
+}
+
+.responsive-overlay__region--outputs .responsive-overlay__region-content {
+    overflow-y: auto;
 }
 
 .responsive-overlay__divider {
@@ -534,7 +539,8 @@
     display: flex;
     flex-direction: column;
     gap: 20px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     flex: 1;
 }
 

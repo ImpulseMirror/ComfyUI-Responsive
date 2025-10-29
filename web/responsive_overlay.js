@@ -395,6 +395,11 @@ function updateLayoutMode(root = document.getElementById(OVERLAY_ID)) {
     }
 }
 
+function rootIsStacked() {
+    const root = document.getElementById(OVERLAY_ID);
+    return !!root && root.classList.contains("responsive-overlay--stacked");
+}
+
 function setupPullToRefresh(root) {
     if (!root || pullRefreshState.bound) {
         return;
@@ -527,6 +532,8 @@ function updateHiddenToggleButton() {
     if (!button) {
         return;
     }
+    const visible = !rootIsStacked() || activeRegion === "nodes";
+    button.style.display = visible ? "inline-flex" : "none";
     if (showHiddenItems) {
         button.textContent = "Hide Hidden";
         button.classList.add("responsive-overlay__filter--active");
