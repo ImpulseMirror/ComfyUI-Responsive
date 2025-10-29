@@ -172,11 +172,12 @@
     cursor: row-resize;
     user-select: none;
     background: transparent;
+    touch-action: none;
 }
 
 .responsive-overlay__divider-handle {
     display: block;
-    width: 120px;
+    width: 96px;
     height: 4px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.12);

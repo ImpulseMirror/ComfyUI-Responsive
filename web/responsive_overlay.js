@@ -58,6 +58,7 @@ const nodeStatuses = new Map();
 const nodeTitleCache = new Map();
 let regionLayoutSizes = loadLayoutSizes();
 let layoutResizeListenerBound = false;
+let isLayoutDragging = false;
 normalizeLayoutSizes();
 
 const executionTracking = {
@@ -155,7 +156,8 @@ function normalizeLayoutSizes() {
     });
 }
 
-function applyLayoutSizes(root = document.getElementById(OVERLAY_ID)) {
+function applyLayoutSizes(root = document.getElementById(OVERLAY_ID), options = {}) {
+    const { skipNormalize = false } = options;
     if (!root) {
         return;
     }
@@ -163,7 +165,9 @@ function applyLayoutSizes(root = document.getElementById(OVERLAY_ID)) {
         clearRegionFlexStyles(root);
         return;
     }
-    normalizeLayoutSizes();
+    if (!skipNormalize) {
+        normalizeLayoutSizes();
+    }
     const body = root.querySelector(".responsive-overlay__body");
     if (!body) {
         return;
@@ -209,42 +213,55 @@ function initializeLayoutResizers(root) {
         divider.setPointerCapture?.(event.pointerId);
         root.classList.add("responsive-overlay--resizing");
 
-        const prevRegion = body.querySelector(`[data-region="${prevKey}"]`);
-        const nextRegion = body.querySelector(`[data-region="${nextKey}"]`);
-        const prevRect = prevRegion?.getBoundingClientRect();
-        const nextRect = nextRegion?.getBoundingClientRect();
-        const prevHeightPx = Math.max(MIN_REGION_RATIO * totalHeight, prevRect?.height ?? (regionLayoutSizes[prevKey] * totalHeight));
-        const nextHeightPx = Math.max(MIN_REGION_RATIO * totalHeight, nextRect?.height ?? (regionLayoutSizes[nextKey] * totalHeight));
-        const combinedPx = prevHeightPx + nextHeightPx;
-        if (combinedPx <= MIN_REGION_RATIO * totalHeight * 2) {
+        const prevStartRatio = regionLayoutSizes[prevKey];
+        const nextStartRatio = regionLayoutSizes[nextKey];
+        const combinedRatio = prevStartRatio + nextStartRatio;
+        if (combinedRatio <= MIN_REGION_RATIO * 2) {
+            divider.releasePointerCapture?.(event.pointerId);
+            root.classList.remove("responsive-overlay--resizing");
             return;
         }
 
+        isLayoutDragging = true;
+
         const startY = event.clientY;
-        const minPx = MIN_REGION_RATIO * totalHeight;
+        const minRatio = MIN_REGION_RATIO;
 
         const onPointerMove = (moveEvent) => {
-            const deltaY = moveEvent.clientY - startY;
-            let newPrevPx = clamp(prevHeightPx + deltaY, minPx, combinedPx - minPx);
-            if (!Number.isFinite(newPrevPx)) {
+            if (moveEvent.buttons === 0) {
+                onPointerUp();
                 return;
             }
-            const newNextPx = combinedPx - newPrevPx;
-            regionLayoutSizes[prevKey] = newPrevPx / totalHeight;
-            regionLayoutSizes[nextKey] = newNextPx / totalHeight;
-            applyLayoutSizes(root);
+            const deltaY = moveEvent.clientY - startY;
+            const deltaRatio = deltaY / totalHeight;
+            let newPrevRatio = clamp(prevStartRatio + deltaRatio, minRatio, combinedRatio - minRatio);
+            if (!Number.isFinite(newPrevRatio)) {
+                return;
+            }
+            const newNextRatio = combinedRatio - newPrevRatio;
+            regionLayoutSizes[prevKey] = newPrevRatio;
+            regionLayoutSizes[nextKey] = newNextRatio;
+            applyLayoutSizes(root, { skipNormalize: true });
         };
 
         const onPointerUp = () => {
+            if (!isLayoutDragging) {
+                return;
+            }
             divider.releasePointerCapture?.(event.pointerId);
             root.classList.remove("responsive-overlay--resizing");
+            isLayoutDragging = false;
+            normalizeLayoutSizes();
+            applyLayoutSizes(root);
             persistLayoutSizes();
             window.removeEventListener("pointermove", onPointerMove);
             window.removeEventListener("pointerup", onPointerUp);
+            window.removeEventListener("pointercancel", onPointerUp);
         };
 
         window.addEventListener("pointermove", onPointerMove);
         window.addEventListener("pointerup", onPointerUp, { once: true });
+        window.addEventListener("pointercancel", onPointerUp, { once: true });
     };
 
     body.querySelectorAll(".responsive-overlay__divider").forEach((divider) => {
@@ -254,7 +271,20 @@ function initializeLayoutResizers(root) {
     root.dataset.layoutInitialized = "true";
 
     if (!layoutResizeListenerBound && typeof window !== "undefined") {
-        window.addEventListener("resize", () => applyLayoutSizes());
+        window.addEventListener("resize", () => {
+            const rootEl = document.getElementById(OVERLAY_ID);
+            if (!rootEl) {
+                return;
+            }
+            if (!isStackedLayout(rootEl)) {
+                clearRegionFlexStyles(rootEl);
+                return;
+            }
+            if (isLayoutDragging) {
+                return;
+            }
+            applyLayoutSizes(rootEl);
+        });
         layoutResizeListenerBound = true;
     }
 }
