@@ -1,4 +1,4 @@
-import { app, $el, ComfyButton } from "./comfy_context.js";
+import { app, $el, ComfyButton, ComfyButtonGroup } from "./comfy_context.js";
 import {
     ACTIVE_CLASS,
     CURRENT_MEDIA_ID,
@@ -35,6 +35,81 @@ import {
 } from "./workflow_renderer.js";
 import { renderOutputs } from "../utils/responsive_overlay_media.js";
 
+const NAV_CONTAINER_ID = "responsive-overlay-controls";
+let navContainer = null;
+
+function waitForElement(selector, timeout = 5000) {
+    if (typeof document === "undefined") {
+        return Promise.resolve(null);
+    }
+    const immediate = document.querySelector(selector);
+    if (immediate) {
+        return Promise.resolve(immediate);
+    }
+    return new Promise((resolve) => {
+        let timer = null;
+        const observer = new MutationObserver(() => {
+            const element = document.querySelector(selector);
+            if (element) {
+                if (timer) {
+                    clearTimeout(timer);
+                }
+                observer.disconnect();
+                resolve(element);
+            }
+        });
+        observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+        if (timeout > 0) {
+            timer = setTimeout(() => {
+                observer.disconnect();
+                resolve(document.querySelector(selector));
+            }, timeout);
+        }
+    });
+}
+
+async function ensureNavContainer() {
+    if (typeof document === "undefined") {
+        return null;
+    }
+
+    if (navContainer && navContainer.isConnected) {
+        return navContainer;
+    }
+
+    let containerElement = document.getElementById(NAV_CONTAINER_ID);
+    if (!containerElement) {
+        if (ComfyButtonGroup) {
+            const group = new ComfyButtonGroup();
+            containerElement = group.element;
+        } else {
+            containerElement = document.createElement("div");
+            containerElement.className = "comfyui-button-group";
+        }
+        containerElement.id = NAV_CONTAINER_ID;
+    }
+
+    const settingsGroup = app?.menu?.settingsGroup?.element || await waitForElement(".comfy-menu .comfyui-menu-settings", 6000);
+    if (settingsGroup?.parentElement) {
+        settingsGroup.parentElement.insertBefore(containerElement, settingsGroup);
+    } else {
+        const comfyMenu = document.querySelector(".comfy-menu");
+        if (comfyMenu?.parentElement) {
+            comfyMenu.parentElement.insertBefore(containerElement, comfyMenu);
+        } else {
+            const topBarRight = document.getElementById("top-bar-right");
+            if (topBarRight?.parentElement) {
+                topBarRight.parentElement.insertBefore(containerElement, topBarRight);
+            } else if (!containerElement.isConnected) {
+                document.body.appendChild(containerElement);
+            }
+        }
+    }
+
+    navContainer = containerElement;
+    return navContainer;
+}
+
 export function ensureStyleTag() {
     if (document.getElementById("responsive-overlay-styles")) {
         return;
@@ -68,26 +143,18 @@ export async function buildToggleButton() {
         return existing;
     }
 
-    const placeInMenu = (element) => {
-        element.id = TOGGLE_ID;
-        const modernTarget = app?.menu?.settingsGroup?.element;
-        if (modernTarget?.parentElement) {
-            modernTarget.before(element);
-            return true;
-        }
+    const container = await ensureNavContainer();
+    if (!container) {
+        console.warn(`[${EXTENSION_NAME}] Unable to create navigation container for Responsive overlay toggle.`);
+        return null;
+    }
 
-        const menu = document.querySelector(".comfy-menu")
-            || document.querySelector("#top-bar-right")
-            || document.querySelector("#top-bar");
+    const preexisting = container.querySelector(`#${TOGGLE_ID}`);
+    if (preexisting) {
+        return preexisting;
+    }
 
-        if (menu) {
-            menu.appendChild(element);
-            return true;
-        }
-
-        return false;
-    };
-
+    let element;
     if (ComfyButton) {
         const comfyButton = new ComfyButton({
             tooltip: "Toggle responsive overlay",
@@ -95,29 +162,20 @@ export async function buildToggleButton() {
             classList: "comfyui-button comfyui-menu-mobile-collapse",
             action: () => toggleOverlay()
         });
-
-        const element = comfyButton.element;
-        if (!placeInMenu(element)) {
-            document.body.appendChild(element);
-        }
-
-        return element;
+        element = comfyButton.element;
+    } else {
+        console.debug(`[${EXTENSION_NAME}] ComfyButton unavailable; using legacy button`);
+        element = document.createElement("button");
+        element.type = "button";
+        element.className = "comfyui-button comfyui-menu-mobile-collapse";
+        element.textContent = "Responsive";
+        element.title = "Toggle responsive overlay";
+        element.addEventListener("click", () => toggleOverlay());
     }
 
-    console.debug(`[${EXTENSION_NAME}] ComfyButton unavailable; using legacy button`);
-    const button = document.createElement("button");
-    button.id = TOGGLE_ID;
-    button.type = "button";
-    button.className = "comfyui-button comfyui-menu-mobile-collapse";
-    button.textContent = "Responsive";
-    button.title = "Toggle responsive overlay";
-    button.addEventListener("click", () => toggleOverlay());
-
-    if (!placeInMenu(button)) {
-        document.body.appendChild(button);
-    }
-
-    return button;
+    element.id = TOGGLE_ID;
+    container.appendChild(element);
+    return element;
 }
 
 export function createOverlayRoot() {

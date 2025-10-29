@@ -24,11 +24,17 @@ const buttonModule = await import("../../../scripts/ui/components/button.js").ca
     return {};
 });
 
+
+const buttonGroupModule = await import("../../../scripts/ui/components/buttonGroup.js").catch((error) => {
+    console.debug(`[${EXTENSION_NAME}] ComfyButtonGroup unavailable via import`, error);
+    return {};
+});
 export const app = appModule.app ?? globalThis.app;
 export const api = apiModule.api ?? globalThis.api;
 export const ui = uiModule ?? globalThis.ui ?? {};
 export const $el = uiModule?.$el ?? globalThis.$el;
 export const ComfyButton = buttonModule?.ComfyButton ?? null;
+export const ComfyButtonGroup = buttonGroupModule?.ComfyButtonGroup ?? null;
 
 if (!app) {
     throw new Error(`[${EXTENSION_NAME}] Unable to resolve ComfyUI app reference.`);
