@@ -1,5 +1,4 @@
-import { app } from "../../../scripts/app.js";
-import { $el } from "../../../scripts/ui.js";
+import { app, $el, ComfyButton } from "./comfy_context.js";
 import {
     ACTIVE_CLASS,
     CURRENT_MEDIA_ID,
@@ -89,8 +88,7 @@ export async function buildToggleButton() {
         return false;
     };
 
-    try {
-        const { ComfyButton } = await import("../../../scripts/ui/components/button.js");
+    if (ComfyButton) {
         const comfyButton = new ComfyButton({
             tooltip: "Toggle responsive overlay",
             content: "Responsive",
@@ -104,22 +102,22 @@ export async function buildToggleButton() {
         }
 
         return element;
-    } catch (error) {
-        console.debug(`[${EXTENSION_NAME}] Falling back to legacy button placement`, error);
-        const button = document.createElement("button");
-        button.id = TOGGLE_ID;
-        button.type = "button";
-        button.className = "comfyui-button comfyui-menu-mobile-collapse";
-        button.textContent = "Responsive";
-        button.title = "Toggle responsive overlay";
-        button.addEventListener("click", () => toggleOverlay());
-
-        if (!placeInMenu(button)) {
-            document.body.appendChild(button);
-        }
-
-        return button;
     }
+
+    console.debug(`[${EXTENSION_NAME}] ComfyButton unavailable; using legacy button`);
+    const button = document.createElement("button");
+    button.id = TOGGLE_ID;
+    button.type = "button";
+    button.className = "comfyui-button comfyui-menu-mobile-collapse";
+    button.textContent = "Responsive";
+    button.title = "Toggle responsive overlay";
+    button.addEventListener("click", () => toggleOverlay());
+
+    if (!placeInMenu(button)) {
+        document.body.appendChild(button);
+    }
+
+    return button;
 }
 
 export function createOverlayRoot() {

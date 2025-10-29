@@ -1,10 +1,5 @@
-import { app } from "../../../scripts/app.js";
-import {
-    EXTENSION_NAME,
-    PROGRESS_BAR_ID,
-    PROGRESS_FILL_ID,
-    PROGRESS_TEXT_ID
-} from "./constants.js";
+import { app } from "./comfy_context.js";
+import { EXTENSION_NAME, PROGRESS_BAR_ID, PROGRESS_FILL_ID, PROGRESS_TEXT_ID } from "./constants.js";
 import { getGraphNodes } from "./graph_state.js";
 
 const nodeStatuses = new Map();

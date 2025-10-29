@@ -1,4 +1,4 @@
-import { app } from "../../../scripts/app.js";
+import { app } from "./comfy_context.js";
 
 export function getGraph() {
     return app.graph || null;
