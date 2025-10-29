@@ -355,6 +355,7 @@ function setActiveRegion(regionId) {
     }
     activeRegion = regionId;
     updateLayoutMode();
+    updateHiddenToggleButton();
 }
 
 function updateSectionTabs() {
@@ -1313,6 +1314,9 @@ function renderWorkflow(force = false) {
                 onclick: () => {
                     setSelectedNode(nodeId);
                     renderNodeDetails(node);
+                    if (rootIsStacked()) {
+                        setActiveRegion("details");
+                    }
                 }
             }, [
                 $el("div", { className: "responsive-overlay__node-head" }, [

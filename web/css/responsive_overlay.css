@@ -526,6 +526,7 @@
 .responsive-overlay__results {
     flex: 1 1 auto;
     overflow-y: auto;
+    min-height: 200px;
 }
 
 .responsive-overlay__output-column {
