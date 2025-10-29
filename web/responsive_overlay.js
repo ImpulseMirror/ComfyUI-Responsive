@@ -39,6 +39,12 @@ const HIDDEN_TOGGLE_ID = "responsive-overlay-hidden-toggle";
 const PROGRESS_BAR_ID = "responsive-overlay-progress";
 const PROGRESS_FILL_ID = "responsive-overlay-progress-fill";
 const PROGRESS_TEXT_ID = "responsive-overlay-progress-text";
+const SECTION_TABS_ID = "responsive-overlay-section-tabs";
+const SECTION_DEFINITIONS = [
+    { id: "outputs", label: "Outputs" },
+    { id: "details", label: "Inputs" },
+    { id: "nodes", label: "Workflow" }
+];
 
 const ACTIVE_CLASS = "responsive-overlay-is-open";
 const SELECTED_CLASS = "responsive-overlay__node--selected";
@@ -66,6 +72,7 @@ let layoutResizeListenerBound = false;
 let isLayoutDragging = false;
 let focusScrollListenerBound = false;
 let showHiddenItems = false;
+let activeRegion = SECTION_DEFINITIONS[0].id;
 normalizeLayoutSizes();
 
 const executionTracking = {
@@ -164,28 +171,10 @@ function normalizeLayoutSizes() {
 }
 
 function applyLayoutSizes(root = document.getElementById(OVERLAY_ID), options = {}) {
-    const { skipNormalize = false } = options;
     if (!root) {
         return;
     }
-    if (!isStackedLayout(root)) {
-        clearRegionFlexStyles(root);
-        return;
-    }
-    if (!skipNormalize) {
-        normalizeLayoutSizes();
-    }
-    const body = root.querySelector(".responsive-overlay__body");
-    if (!body) {
-        return;
-    }
-    Object.entries(regionLayoutSizes).forEach(([key, value]) => {
-        const region = body.querySelector(`[data-region="${key}"]`);
-        if (region) {
-            region.style.flexGrow = value;
-            region.style.flexBasis = `${(value * 100).toFixed(2)}%`;
-        }
-    });
+    clearRegionFlexStyles(root);
 }
 
 function initializeLayoutResizers(root) {
@@ -248,7 +237,7 @@ function initializeLayoutResizers(root) {
             const newNextRatio = combinedRatio - newPrevRatio;
             regionLayoutSizes[prevKey] = newPrevRatio;
             regionLayoutSizes[nextKey] = newNextRatio;
-            applyLayoutSizes(root, { skipNormalize: true });
+            applyLayoutSizes(root);
         };
 
         const onPointerUp = () => {
@@ -283,14 +272,15 @@ function initializeLayoutResizers(root) {
             if (!rootEl) {
                 return;
             }
-            if (!isStackedLayout(rootEl)) {
+            updateLayoutMode(rootEl);
+            if (isStackedLayout(rootEl)) {
+                if (isLayoutDragging) {
+                    return;
+                }
+                applyLayoutSizes(rootEl);
+            } else {
                 clearRegionFlexStyles(rootEl);
-                return;
             }
-            if (isLayoutDragging) {
-                return;
-            }
-            applyLayoutSizes(rootEl);
         });
         layoutResizeListenerBound = true;
     }
@@ -320,6 +310,48 @@ function clearRegionFlexStyles(root) {
         region.style.removeProperty("flex-grow");
         region.style.removeProperty("flex-basis");
     });
+}
+
+function setActiveRegion(regionId) {
+    if (!SECTION_DEFINITIONS.some((entry) => entry.id === regionId)) {
+        return;
+    }
+    activeRegion = regionId;
+    updateLayoutMode();
+}
+
+function updateSectionTabs() {
+    const container = document.getElementById(SECTION_TABS_ID);
+    if (!container) {
+        return;
+    }
+    const root = document.getElementById(OVERLAY_ID);
+    const stacked = !!root?.classList.contains("responsive-overlay--stacked");
+    container.classList.toggle("responsive-overlay__section-tabs--active", stacked);
+    container.querySelectorAll("button").forEach((button) => {
+        const region = button.dataset.region;
+        const isActive = region === activeRegion;
+        button.classList.toggle("responsive-overlay__section-tab--active", isActive);
+        button.setAttribute("aria-pressed", String(isActive));
+    });
+}
+
+function updateLayoutMode(root = document.getElementById(OVERLAY_ID)) {
+    if (!root) {
+        return;
+    }
+    const stacked = isStackedLayout(root);
+    root.classList.toggle("responsive-overlay--stacked", stacked);
+    const sections = root.querySelectorAll(".responsive-overlay__region");
+    sections.forEach((section) => {
+        const regionKey = section.dataset.region;
+        if (stacked) {
+            section.classList.toggle("is-active", regionKey === activeRegion);
+        } else {
+            section.classList.remove("is-active");
+        }
+    });
+    updateSectionTabs();
 }
 
 function toggleHiddenFilter() {
@@ -780,7 +812,20 @@ function createOverlayRoot() {
                         className: "responsive-overlay__close",
                         onclick: () => setOverlayState(false)
                     }, ["Close"])
-                ])
+                ]),
+                $el("div", { className: "responsive-overlay__section-tabs", id: SECTION_TABS_ID },
+                    SECTION_DEFINITIONS.map((section) =>
+                        $el("button", {
+                            type: "button",
+                            className: "responsive-overlay__section-tab",
+                            dataset: { region: section.id },
+                            onclick: (event) => {
+                                event.preventDefault();
+                                setActiveRegion(section.id);
+                            }
+                        }, [section.label])
+                    )
+                )
             ]),
             $el("div", { className: "responsive-overlay__body" }, [
                 $el("section", { className: "responsive-overlay__region responsive-overlay__region--outputs", dataset: { region: "outputs" } }, [
@@ -834,6 +879,7 @@ function createOverlayRoot() {
     setupFocusScrollHandling(root);
     applyLayoutSizes(root);
     updateHiddenToggleButton();
+    updateLayoutMode(root);
     return root;
 }
 
@@ -1244,6 +1290,8 @@ function renderWorkflow(force = false) {
     } else {
         renderNodeDetails(null);
     }
+
+    updateLayoutMode();
 }
 
 function renderNodeDetails(node) {
@@ -1641,6 +1689,7 @@ function setOverlayState(open) {
 
     if (open) {
         updateHiddenToggleButton();
+        updateLayoutMode(root);
         applyLayoutSizes(root);
         renderWorkflow(true);
         renderOutputs();

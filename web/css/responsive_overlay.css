@@ -79,6 +79,10 @@
     background: rgba(255, 255, 255, 0.04);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 2100;
+    backdrop-filter: blur(8px);
 }
 
 .responsive-overlay__progress.hidden {
@@ -122,6 +126,40 @@
     background: rgba(129, 140, 248, 0.45) !important;
     color: #0f172a;
     font-weight: 600;
+}
+
+.responsive-overlay__section-tabs {
+    display: none;
+    margin-top: 14px;
+    gap: 8px;
+}
+
+.responsive-overlay__section-tabs--active {
+    display: flex;
+}
+
+.responsive-overlay__section-tab {
+    flex: 1;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.45);
+    color: #e2e8f0;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.responsive-overlay__section-tab:hover {
+    background: rgba(59, 130, 246, 0.35);
+}
+
+.responsive-overlay__section-tab--active {
+    background: linear-gradient(135deg, rgba(129, 140, 248, 0.65), rgba(59, 130, 246, 0.65));
+    color: #0f172a;
+    transform: translateY(-1px);
 }
 
 .responsive-overlay__header-actions .responsive-overlay__generate {
@@ -307,6 +345,24 @@
 
 .responsive-overlay__group--hidden {
     opacity: 0.6;
+}
+
+.responsive-overlay--stacked .responsive-overlay__divider {
+    display: none;
+}
+
+.responsive-overlay--stacked .responsive-overlay__region {
+    display: none;
+}
+
+.responsive-overlay--stacked .responsive-overlay__region.is-active {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+}
+
+.responsive-overlay--stacked .responsive-overlay__section-tabs {
+    display: flex;
 }
 
 .responsive-overlay__content {
