@@ -769,8 +769,7 @@ function renderNodeDetails(node) {
                     const attrs = {
                         className: "responsive-overlay__widget-input",
                         type: "number",
-                        value: descriptor.value ?? "",
-                        readonly: true
+                        value: descriptor.value ?? ""
                     };
                     if (descriptor.attributes) {
                         if (descriptor.attributes.step !== undefined) {
@@ -786,8 +785,14 @@ function renderNodeDetails(node) {
                     input = $el("input", {
                         ...attrs
                     });
-                    // Make it read-only display; no change handler
-                    input.readOnly = true;
+                    if (!skipInputForRgthree) {
+                        input.addEventListener("change", (event) => {
+                            const parsed = parseFloat(event.target.value);
+                            updateWidgetValue(node, widget, Number.isNaN(parsed) ? widget.value : parsed);
+                        });
+                    } else {
+                        input.readOnly = true;
+                    }
                     break;
                 }
                 case "checkbox":
@@ -795,25 +800,29 @@ function renderNodeDetails(node) {
                         className: "responsive-overlay__widget-input",
                         type: "checkbox",
                         checked: !!descriptor.value,
-                        disabled: true
+                        disabled: skipInputForRgthree ? true : false
                     });
-                    // No change handler; seed UI is controlled by buttons
+                    if (!skipInputForRgthree) {
+                        input.addEventListener("change", (event) => {
+                            updateWidgetValue(node, widget, event.target.checked);
+                        });
+                    }
                     break;
                 case "image": {
                     input = createImageWidgetControls(node, widget, descriptor);
                     break;
                 }
                 default:
-                    // For seed contexts, avoid creating extra textareas that are just labels
                     if (!skipInputForRgthree) {
                         input = $el("textarea", {
                             className: "responsive-overlay__widget-input responsive-overlay__widget-textarea",
-                            value: descriptor.value ?? "",
-                            readonly: true
+                            value: descriptor.value ?? ""
                         });
-                        input.readOnly = true;
+                        input.addEventListener("input", (event) => {
+                            updateWidgetValue(node, widget, event.target.value);
+                        });
                     } else {
-                        input = null;
+                        input = null; // skip seed button rows
                     }
             }
 
