@@ -9,7 +9,6 @@ import { setPullToRefreshHandlers } from "./features/pull_to_refresh.js";
 import {
     ensureStyleTag,
     buildToggleButton,
-    buildFloatingOpenButton,
     createOverlayRoot,
     handleKeyboardShortcuts
 } from "./features/overlay_controls.js";
@@ -41,10 +40,10 @@ app.registerExtension({
     name: EXTENSION_NAME,
     async setup() {
         ensureStyleTag();
+        // Ensure old floating FAB is removed if present from previous versions
+        document.getElementById("responsive-overlay-open-fab")?.remove?.();
         const root = createOverlayRoot();
         const toggle = await buildToggleButton();
-        // Always provide a simple floating fallback button to open the overlay
-        buildFloatingOpenButton();
 
         configureMediaTargets({
             currentMediaId: CURRENT_MEDIA_ID,

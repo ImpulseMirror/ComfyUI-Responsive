@@ -39,7 +39,8 @@ import { getGraphNodes } from "./graph_state.js";
 import {
     getActiveRegion,
     registerHiddenToggleUpdater,
-    rootIsStacked
+    rootIsStacked,
+    setActiveRegion
 } from "./layout_manager.js";
 
 let selectedNodeId = null;
@@ -211,6 +212,16 @@ export function renderWorkflow(force = false) {
             dataset: { sectionId, hidden: groupHidden ? "true" : "false" }
         });
 
+        // Apply group background color to match graph
+        try {
+            const groupColor = toRgbaString(getGroupAccentColor(section.group), 0.14);
+            if (groupColor) {
+                sectionEl.style.backgroundColor = groupColor;
+            }
+        } catch (_) {
+            // ignore
+        }
+
         const enableSectionDrop = (target) => {
             target.addEventListener("dragover", (event) => {
                 if (!draggedSectionId || draggedSectionId === sectionId) {
@@ -273,7 +284,23 @@ export function renderWorkflow(force = false) {
                             event.stopPropagation();
                             toggleGroupVisibility(sectionId, !groupHidden);
                         }
-                    }, [groupHidden ? "👁‍🗨" : "👁"])
+                    }, [groupHidden ? "👁‍🗨" : "👁"]),
+                    (() => {
+                        const allBypassed = nodesOrdered.length > 0 && nodesOrdered.every((n) => isNodeBypassed(n));
+                        const btn = $el("button", {
+                            className: `responsive-overlay__bypass responsive-overlay__bypass--group${allBypassed ? " responsive-overlay__bypass--active" : ""}`,
+                            title: allBypassed ? "Unbypass group" : "Bypass group",
+                            onclick: (event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                toggleGroupBypass(sectionId, !allBypassed, section.nodeIds);
+                            }
+                        }, ["✕"]);
+                        if (!allBypassed) {
+                            btn.style.backgroundColor = "rgba(15, 23, 42, 0.35)";
+                        }
+                        return btn;
+                    })()
                 ].filter(Boolean))
             ]);
 
@@ -327,11 +354,13 @@ export function renderWorkflow(force = false) {
                         return;
                     }
                     selectedNodeId = nodeId;
+                    setActiveRegion("details");
                     renderNodeDetails(node);
                     setSelectedNode(nodeId);
                 },
                 onfocus: () => {
                     selectedNodeId = nodeId;
+                    setActiveRegion("details");
                     renderNodeDetails(node);
                     setSelectedNode(nodeId);
                 }
@@ -343,6 +372,16 @@ export function renderWorkflow(force = false) {
                     $el("span", { className: "responsive-overlay__node-outputs" }, [`${display.outputCount} output${display.outputCount === 1 ? "" : "s"}`])
                 ])
             ]);
+
+            // Apply node background color to match graph
+            try {
+                const nodeColor = toRgbaString(getNodeAccentColor(node), 0.22);
+                if (nodeColor) {
+                    button.style.backgroundColor = nodeColor;
+                }
+            } catch (_) {
+                // ignore
+            }
 
             button.addEventListener("dragstart", (event) => {
                 draggedNodeId = nodeId;
@@ -374,6 +413,27 @@ export function renderWorkflow(force = false) {
             }, [nodeHidden ? "👁‍🗨" : "👁"]);
 
             button.appendChild(toggleButton);
+
+            // Add bypass control
+            const nodeBypassed = isNodeBypassed(node);
+            if (nodeBypassed) {
+                button.classList.add("responsive-overlay__node--bypassed");
+            }
+            const bypassButton = $el("button", {
+                className: `responsive-overlay__bypass${nodeBypassed ? " responsive-overlay__bypass--active" : ""}`,
+                title: nodeBypassed ? "Unbypass node" : "Bypass node",
+                onclick: (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleNodeBypass(nodeId, !nodeBypassed);
+                }
+            }, ["✕"]);
+
+            if (!nodeBypassed) {
+                bypassButton.style.backgroundColor = "rgba(15, 23, 42, 0.45)";
+            }
+
+            button.appendChild(bypassButton);
 
             const status = getNodeStatus(nodeId) || { state: executionTracking.active ? "pending" : "idle", progress: null };
             applyStatusClasses(button, status);
@@ -431,6 +491,97 @@ export function updateHiddenToggleButton() {
     }
     button.setAttribute("aria-pressed", String(showHiddenItems));
 }
+
+// Bypass helpers
+function isNodeBypassed(node) {
+    return !!node && node.mode === 2;
+}
+
+function toggleNodeBypass(nodeId, bypassed) {
+    const nodes = getGraphNodes();
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) {
+        return;
+    }
+    node.mode = bypassed ? 2 : 0;
+    if (app?.graph?.setDirtyCanvas) {
+        app.graph.setDirtyCanvas(true, true);
+    }
+    renderWorkflow(true);
+}
+
+function toggleGroupBypass(sectionId, bypassed, nodeIds) {
+    const nodes = getGraphNodes();
+    if (!Array.isArray(nodeIds)) {
+        return;
+    }
+    nodeIds.forEach((id) => {
+        const node = nodes.find((n) => n.id === id);
+        if (node) {
+            node.mode = bypassed ? 2 : 0;
+        }
+    });
+    if (app?.graph?.setDirtyCanvas) {
+        app.graph.setDirtyCanvas(true, true);
+    }
+    renderWorkflow(true);
+}
+
+// Color helpers – compute CSS rgba from various LiteGraph color formats
+function normalizeCssColor(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+    if (typeof value === "number") {
+        const hex = (value >>> 0).toString(16).padStart(6, "0");
+        return `#${hex.slice(-6)}`;
+    }
+    if (Array.isArray(value)) {
+        const [r = 0, g = 0, b = 0, a = 1] = value;
+        return `rgba(${r}, ${g}, ${b}, ${a})`;
+    }
+    if (typeof value === "string") {
+        if (/^[0-9A-Fa-f]{6}$/.test(value)) {
+            return `#${value}`;
+        }
+        return value;
+    }
+    return null;
+}
+
+function toRgbaString(color, fallbackAlpha = 0.2) {
+    if (!color) {
+        return null;
+    }
+    if (color.startsWith("#")) {
+        const hex = color.slice(1);
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, ${fallbackAlpha})`;
+    }
+    const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+    if (m) {
+        const r = Number(m[1]);
+        const g = Number(m[2]);
+        const b = Number(m[3]);
+        const a = m[4] !== undefined ? Number(m[4]) : fallbackAlpha;
+        return `rgba(${r}, ${g}, ${b}, ${a})`;
+    }
+    return color;
+}
+
+function getNodeAccentColor(node) {
+    const raw = node?.bgcolor ?? node?.color ?? node?.constructor?.bgcolor ?? node?.constructor?.color;
+    return normalizeCssColor(raw);
+}
+
+function getGroupAccentColor(group) {
+    const raw = group?.bgcolor ?? group?.color;
+    return normalizeCssColor(raw);
+}
+
+// (duplicate helper block removed)
 
 function toggleNodeVisibility(nodeId, hidden) {
     if (!currentWorkflowKey) {
