@@ -21,7 +21,6 @@ import {
     applyLayoutSizes,
     initializeLayoutResizers,
     setActiveRegion,
-    updateHiddenToggleButton,
     updateLayoutMode
 } from "./layout_manager.js";
 import { setupFocusScrollHandling } from "./focus.js";
@@ -31,7 +30,8 @@ import {
     openLightbox,
     renderWorkflow,
     toggleHiddenFilter,
-    triggerGenerate
+    triggerGenerate,
+    updateHiddenToggleButton
 } from "./workflow_renderer.js";
 import { renderOutputs } from "../utils/responsive_overlay_media.js";
 
