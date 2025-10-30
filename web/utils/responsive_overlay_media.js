@@ -125,7 +125,25 @@ export function openLightboxMedia(item) {
         mediaContainer.appendChild(video);
     } else {
         const img = createImageElement(item.url, item.filename, { loading: "eager" });
-        mediaContainer.appendChild(img);
+        // Wrap in a pan/zoom container for pinch-zoom support
+        const wrapper = document.createElement("div");
+        wrapper.style.width = "100%";
+        wrapper.style.height = "100%";
+        wrapper.style.display = "flex";
+        wrapper.style.alignItems = "center";
+        wrapper.style.justifyContent = "center";
+        wrapper.style.overflow = "hidden";
+        wrapper.style.touchAction = "none"; // enable pointer-based pinch gestures
+
+        img.style.transformOrigin = "center center";
+        img.style.willChange = "transform";
+        img.style.userSelect = "none";
+        img.draggable = false;
+
+        wrapper.appendChild(img);
+        mediaContainer.appendChild(wrapper);
+
+        enablePinchZoom(img, wrapper);
     }
 
     lightbox.classList.remove("hidden");
@@ -263,6 +281,125 @@ export function createImageElement(src, alt, attributes = {}) {
     img.alt = alt;
     Object.assign(img, attributes);
     return img;
+}
+
+// Adds pinch-zoom and pan support to an image inside a container using Pointer Events
+function enablePinchZoom(img, container) {
+    let pointers = new Map();
+    let scale = 1;
+    let minScale = 1;
+    let maxScale = 6;
+    let translateX = 0;
+    let translateY = 0;
+
+    const applyTransform = () => {
+        img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    };
+
+    const getDistance = (p1, p2) => {
+        const dx = p2.clientX - p1.clientX;
+        const dy = p2.clientY - p1.clientY;
+        return Math.hypot(dx, dy);
+    };
+
+    const getMidpoint = (p1, p2) => ({
+        x: (p1.clientX + p2.clientX) / 2,
+        y: (p1.clientY + p2.clientY) / 2
+    });
+
+    let startDistance = 0;
+    let startScale = 1;
+    let originX = 0;
+    let originY = 0;
+    let lastX = 0;
+    let lastY = 0;
+
+    const onPointerDown = (e) => {
+        container.setPointerCapture?.(e.pointerId);
+        pointers.set(e.pointerId, e);
+        if (pointers.size === 1) {
+            lastX = e.clientX;
+            lastY = e.clientY;
+        } else if (pointers.size === 2) {
+            const [p1, p2] = [...pointers.values()];
+            startDistance = getDistance(p1, p2);
+            startScale = scale;
+            const mid = getMidpoint(p1, p2);
+            const rect = img.getBoundingClientRect();
+            originX = mid.x - (rect.left + rect.width / 2);
+            originY = mid.y - (rect.top + rect.height / 2);
+        }
+    };
+
+    const onPointerMove = (e) => {
+        if (!pointers.has(e.pointerId)) return;
+        pointers.set(e.pointerId, e);
+        if (pointers.size === 1 && scale > 1) {
+            const dx = e.clientX - lastX;
+            const dy = e.clientY - lastY;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            translateX += dx;
+            translateY += dy;
+            applyTransform();
+        } else if (pointers.size === 2) {
+            const [p1, p2] = [...pointers.values()];
+            const dist = getDistance(p1, p2);
+            if (startDistance > 0) {
+                const factor = dist / startDistance;
+                let nextScale = Math.min(maxScale, Math.max(minScale, startScale * factor));
+                // Adjust translate so zoom centers around the pinch midpoint
+                const scaleDiff = nextScale / scale;
+                translateX = (translateX - originX) * scaleDiff + originX;
+                translateY = (translateY - originY) * scaleDiff + originY;
+                scale = nextScale;
+                applyTransform();
+            }
+        }
+    };
+
+    const onPointerUp = (e) => {
+        pointers.delete(e.pointerId);
+        if (pointers.size < 2) {
+            startDistance = 0;
+        }
+    };
+
+    const onWheel = (e) => {
+        if (!e.ctrlKey) return; // desktop pinch-zoom gesture
+        e.preventDefault();
+        const rect = img.getBoundingClientRect();
+        const pointX = e.clientX - (rect.left + rect.width / 2);
+        const pointY = e.clientY - (rect.top + rect.height / 2);
+        const delta = -e.deltaY;
+        const zoom = delta > 0 ? 1.06 : 0.94;
+        const nextScale = Math.min(maxScale, Math.max(minScale, scale * zoom));
+        const scaleDiff = nextScale / scale;
+        translateX = (translateX - pointX) * scaleDiff + pointX;
+        translateY = (translateY - pointY) * scaleDiff + pointY;
+        scale = nextScale;
+        applyTransform();
+    };
+
+    // Double-tap to reset
+    let lastTap = 0;
+    const onDblTap = (e) => {
+        const now = Date.now();
+        if (now - lastTap < 300) {
+            scale = 1;
+            translateX = 0;
+            translateY = 0;
+            applyTransform();
+        }
+        lastTap = now;
+    };
+
+    container.addEventListener("pointerdown", onPointerDown, { passive: true });
+    container.addEventListener("pointermove", onPointerMove, { passive: true });
+    container.addEventListener("pointerup", onPointerUp, { passive: true });
+    container.addEventListener("pointercancel", onPointerUp, { passive: true });
+    container.addEventListener("wheel", onWheel, { passive: false });
+    container.addEventListener("touchend", onDblTap, { passive: true });
 }
 
 function createSpan(className, text) {

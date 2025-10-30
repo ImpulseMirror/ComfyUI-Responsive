@@ -981,6 +981,12 @@ body.responsive-overlay-is-open {
     object-fit: contain;
 }
 
+/* Improve touch zooming/dragging experience in lightbox */
+.responsive-overlay__lightbox-media img {
+    touch-action: none;
+    user-select: none;
+}
+
 .responsive-overlay__lightbox-close {
     position: absolute;
     top: -20px;
