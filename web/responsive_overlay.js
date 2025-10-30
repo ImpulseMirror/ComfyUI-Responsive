@@ -9,6 +9,7 @@ import { setPullToRefreshHandlers } from "./features/pull_to_refresh.js";
 import {
     ensureStyleTag,
     buildToggleButton,
+    buildFloatingOpenButton,
     createOverlayRoot,
     handleKeyboardShortcuts
 } from "./features/overlay_controls.js";
@@ -42,6 +43,8 @@ app.registerExtension({
         ensureStyleTag();
         const root = createOverlayRoot();
         const toggle = await buildToggleButton();
+        // Always provide a simple floating fallback button to open the overlay
+        buildFloatingOpenButton();
 
         configureMediaTargets({
             currentMediaId: CURRENT_MEDIA_ID,
@@ -49,7 +52,7 @@ app.registerExtension({
             resultsGridId: RESULTS_GRID_ID
         });
 
-        if (!root || !toggle) {
+        if (!root) {
             console.warn(`[${EXTENSION_NAME}] Unable to bootstrap overlay UI.`);
             return;
         }

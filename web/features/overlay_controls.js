@@ -178,6 +178,35 @@ export async function buildToggleButton() {
     return element;
 }
 
+export function buildFloatingOpenButton() {
+    if (typeof document === "undefined") {
+        return null;
+    }
+
+    const existing = document.getElementById("responsive-overlay-open-fab");
+    if (existing) {
+        return existing;
+    }
+
+    const button = document.createElement("button");
+    button.id = "responsive-overlay-open-fab";
+    button.type = "button";
+    button.textContent = "Open Overlay";
+    button.className = "comfyui-button";
+    Object.assign(button.style, {
+        position: "fixed",
+        right: "16px",
+        bottom: "16px",
+        zIndex: "9999",
+        padding: "8px 12px",
+        borderRadius: "8px"
+    });
+    button.addEventListener("click", () => setOverlayState(true));
+
+    document.body.appendChild(button);
+    return button;
+}
+
 export function createOverlayRoot() {
     if (document.getElementById(OVERLAY_ID)) {
         return document.getElementById(OVERLAY_ID);
@@ -315,13 +344,15 @@ export function setOverlayState(open) {
     const root = document.getElementById(OVERLAY_ID);
     const toggle = document.getElementById(TOGGLE_ID);
 
-    if (!root || !toggle) {
+    if (!root) {
         return;
     }
 
     root.classList.toggle("hidden", !open);
     document.body.classList.toggle(ACTIVE_CLASS, open);
-    toggle.classList.toggle("active", open);
+    if (toggle) {
+        toggle.classList.toggle("active", open);
+    }
 
     if (open) {
         updateHiddenToggleButton();
