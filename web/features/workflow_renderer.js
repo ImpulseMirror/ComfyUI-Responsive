@@ -52,6 +52,9 @@ let draggedNodeId = null;
 let draggedSectionId = null;
 let showHiddenItems = false;
 
+// Track previous fixed seeds per widget so we can restore with the "previous seed" action
+const previousSeedByWidget = new WeakMap();
+
 registerHiddenToggleUpdater(() => updateHiddenToggleButton());
 
 export function renderWorkflow(force = false) {
@@ -635,6 +638,16 @@ function renderNodeDetails(node) {
     if (!widgets.length) {
         widgetContainer.appendChild($el("p", { className: "responsive-overlay__empty" }, ["This node exposes no widgets to edit."]));
     } else {
+        // Detect rgthree Seed button widgets and the actual seed widget
+        const normalize = (s) => String(s || "").trim().toLowerCase();
+        const isButtonLabel = (label) => {
+            const t = normalize(label);
+            return t.includes("randomize each time") || t.includes("new fixed random") || t.includes("previous seed") || t.includes("use last queued seed");
+        };
+
+        const seedWidget = widgets.find((w) => normalize(w?.name) === "seed" || (typeof w?.value === "number" && normalize(w?.name).includes("seed"))) || null;
+        const hasRgthreeSeedButtons = widgets.some((w) => isButtonLabel(w?.name) || isButtonLabel(w?.label));
+
         widgets.forEach((widget, index) => {
             if (!widget) {
                 return;
@@ -642,13 +655,104 @@ function renderNodeDetails(node) {
 
             const descriptor = getWidgetDescriptor(widget, index);
 
-            const row = $el("label", { className: "responsive-overlay__widget" }, [
-                $el("span", { className: "responsive-overlay__widget-label" }, [descriptor.label])
-            ]);
+            // Skip rendering of rgthree label-only rows; we will render a single seed row instead
+            if (hasRgthreeSeedButtons && widget !== seedWidget && (isButtonLabel(descriptor.label) || isButtonLabel(widget?.name))) {
+                return;
+            }
+
+            // Build widget label and optional rgthree Seed actions
+            const row = $el("label", { className: "responsive-overlay__widget" }, []);
+
+            const rawLabel = String(descriptor.label ?? "");
+            const attachRgthreeButtons = hasRgthreeSeedButtons && widget === seedWidget;
+            const baseLabelText = attachRgthreeButtons ? (normalize(seedWidget?.name) || "seed").replace(/^./, (c) => c.toUpperCase()) : rawLabel;
+
+            row.appendChild($el("span", { className: "responsive-overlay__widget-label" }, [baseLabelText]));
+
+            if (attachRgthreeButtons) {
+                const actions = $el("div", { className: "responsive-overlay__widget-buttons" }, []);
+
+                const makeBtn = (label, title, handler) => {
+                    const btn = $el("button", { type: "button", className: "responsive-overlay__widget-button", title }, [label]);
+                    btn.addEventListener("click", (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handler();
+                    });
+                    return btn;
+                };
+
+                const asInt = (v) => {
+                    const n = typeof v === "number" ? v : parseInt(String(v), 10);
+                    return Number.isFinite(n) ? n : 0;
+                };
+
+                // 🎲 Randomize each time → set seed to -1 (ComfyUI convention for random each run)
+                actions.appendChild(
+                    makeBtn("🎲 Randomize each time", "Set seed to randomize on each execution", () => {
+                        if (seedWidget) {
+                            previousSeedByWidget.set(seedWidget, asInt(seedWidget.value));
+                            updateWidgetValue(node, seedWidget, -1);
+                            scheduleOverlayRefresh(true);
+                        }
+                    })
+                );
+
+                // 🎲 New Fixed Random → generate a new fixed random 32-bit int and set it
+                actions.appendChild(
+                    makeBtn("🎲 New Fixed Random", "Generate a new fixed random seed", () => {
+                        if (seedWidget) {
+                            const current = asInt(seedWidget.value);
+                            if (current !== -1) {
+                                previousSeedByWidget.set(seedWidget, current);
+                            }
+                            // Generate signed 32-bit integer
+                            const newSeed = (Math.floor(Math.random() * 0xffffffff) | 0);
+                            updateWidgetValue(node, seedWidget, newSeed);
+                            scheduleOverlayRefresh(true);
+                        }
+                    })
+                );
+
+                // ♻️ {previous seed} → restore previously stored seed if available
+                actions.appendChild(
+                    makeBtn("♻️ previous seed", "Restore the previous fixed seed", () => {
+                        if (seedWidget) {
+                            const prev = previousSeedByWidget.get(seedWidget);
+                            if (prev !== undefined) {
+                                updateWidgetValue(node, seedWidget, prev);
+                                scheduleOverlayRefresh(true);
+                            }
+                        }
+                    })
+                );
+
+                // Add live seed display (read-only)
+                const currentSeedGetter = () => {
+                    return seedWidget?.value ?? "";
+                };
+                const seedDisplay = $el("span", { className: "responsive-overlay__seed-display" }, [String(currentSeedGetter())]);
+
+                const refreshSeedDisplay = () => {
+                    seedDisplay.textContent = String(currentSeedGetter());
+                };
+
+                actions.appendChild(seedDisplay);
+                row.appendChild(actions);
+                // Keep display in sync after overlay refresh
+                const observer = new MutationObserver(() => refreshSeedDisplay());
+                observer.observe(row, { childList: true, subtree: true });
+            }
 
             let input;
 
-            switch (descriptor.control) {
+            // For rgthree seed, we skip creating input and show only buttons + display
+            const skipInputForRgthree = attachRgthreeButtons === true;
+
+            switch (skipInputForRgthree ? "__skip__" : descriptor.control) {
+                case "__skip__":
+                    input = null; // only show buttons + display
+                    break;
                 case "select":
                     input = $el("select", {
                         className: "responsive-overlay__widget-input",
@@ -665,7 +769,8 @@ function renderNodeDetails(node) {
                     const attrs = {
                         className: "responsive-overlay__widget-input",
                         type: "number",
-                        value: descriptor.value ?? ""
+                        value: descriptor.value ?? "",
+                        readonly: true
                     };
                     if (descriptor.attributes) {
                         if (descriptor.attributes.step !== undefined) {
@@ -681,34 +786,35 @@ function renderNodeDetails(node) {
                     input = $el("input", {
                         ...attrs
                     });
-                    input.addEventListener("change", (event) => {
-                        const parsed = parseFloat(event.target.value);
-                        updateWidgetValue(node, widget, Number.isNaN(parsed) ? widget.value : parsed);
-                    });
+                    // Make it read-only display; no change handler
+                    input.readOnly = true;
                     break;
                 }
                 case "checkbox":
                     input = $el("input", {
                         className: "responsive-overlay__widget-input",
                         type: "checkbox",
-                        checked: !!descriptor.value
+                        checked: !!descriptor.value,
+                        disabled: true
                     });
-                    input.addEventListener("change", (event) => {
-                        updateWidgetValue(node, widget, event.target.checked);
-                    });
+                    // No change handler; seed UI is controlled by buttons
                     break;
                 case "image": {
                     input = createImageWidgetControls(node, widget, descriptor);
                     break;
                 }
                 default:
-                    input = $el("textarea", {
-                        className: "responsive-overlay__widget-input responsive-overlay__widget-textarea",
-                        value: descriptor.value ?? ""
-                    });
-                    input.addEventListener("input", (event) => {
-                        updateWidgetValue(node, widget, event.target.value);
-                    });
+                    // For seed contexts, avoid creating extra textareas that are just labels
+                    if (!skipInputForRgthree) {
+                        input = $el("textarea", {
+                            className: "responsive-overlay__widget-input responsive-overlay__widget-textarea",
+                            value: descriptor.value ?? "",
+                            readonly: true
+                        });
+                        input.readOnly = true;
+                    } else {
+                        input = null;
+                    }
             }
 
             if (input) {

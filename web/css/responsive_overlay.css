@@ -739,6 +739,41 @@
     opacity: 0.8;
 }
 
+/* Inline widget action buttons (e.g., rgthree Seed actions) */
+.responsive-overlay__widget-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.responsive-overlay__widget-button {
+    border: none;
+    border-radius: 10px;
+    padding: 8px 12px;
+    background: rgba(59, 130, 246, 0.28);
+    color: #dbeafe;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.responsive-overlay__widget-button:hover {
+    background: rgba(59, 130, 246, 0.45);
+    transform: translateY(-1px);
+}
+
+.responsive-overlay__seed-display {
+    margin-left: auto;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 12px;
+    color: #e5e7eb;
+}
+
 .responsive-overlay__widget-input {
     width: 100%;
     border-radius: 10px;
